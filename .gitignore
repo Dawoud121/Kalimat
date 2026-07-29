@@ -1,0 +1,20 @@
+node_modules/
+.env
+
+# Server secrets & data (never commit)
+server/config.php
+server/data/kalimat.sqlite
+server/data/tts-cache/
+server/data/exports/
+
+# Legacy Supabase files (no longer used)
+supabase/
+supabase-backup-2026-06-11/
+
+# One-off scripts & temp files
+*.mjs
+*.cjs
+pdf-full.txt
+pdf-output.txt
+bayna-yadayk-parsed.json
+DESIGN.md

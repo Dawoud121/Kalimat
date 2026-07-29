@@ -1,0 +1,22 @@
+RewriteEngine On
+
+# Pass Authorization header through to PHP (cPanel/Apache strips it by default)
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+# Route all /api/* requests to the PHP router
+RewriteCond %{REQUEST_URI} ^/api/
+RewriteRule ^api/(.*)$ api/index.php [QSA,L]
+
+# Protect data directory
+RewriteRule ^data/ - [F,L]
+
+# Protect config
+RewriteRule ^config\.php$ - [F,L]
+RewriteRule ^config\.sample\.php$ - [F,L]
+
+# SPA fallback — serve index.html for all non-file, non-API routes
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !^/api/
+RewriteRule . index.html [L]
