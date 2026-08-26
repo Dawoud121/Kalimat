@@ -14,7 +14,9 @@ supabase-backup-2026-06-11/
 # One-off scripts & temp files
 *.mjs
 *.cjs
+*.mp3
 pdf-full.txt
 pdf-output.txt
 bayna-yadayk-parsed.json
 DESIGN.md
+src/lib/supabase.js
