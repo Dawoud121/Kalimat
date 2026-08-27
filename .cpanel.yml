@@ -4,7 +4,13 @@ deployment:
     # Deploy frontend (Vite build output)
     - export DEPLOYPATH=/home/$USER/public_html
     - /bin/cp dist/index.html $DEPLOYPATH/index.html
+    - /bin/rm -rf $DEPLOYPATH/assets
     - /bin/cp -r dist/assets $DEPLOYPATH/assets
+    - /bin/cp dist/favicon-32.png $DEPLOYPATH/favicon-32.png
+    - /bin/cp dist/favicon.svg $DEPLOYPATH/favicon.svg
+    - /bin/cp dist/apple-touch-icon.png $DEPLOYPATH/apple-touch-icon.png
+    - /bin/cp dist/icon-192.png $DEPLOYPATH/icon-192.png
+    - /bin/cp dist/icon-512.png $DEPLOYPATH/icon-512.png
 
     # Deploy backend PHP
     - /bin/cp -r server/api $DEPLOYPATH/api
