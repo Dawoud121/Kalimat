@@ -50,6 +50,24 @@ $path = preg_replace('#^/api#', '', $path);
 if ($path === '' || $path === false) $path = '/';
 $method = $_SERVER['REQUEST_METHOD'];
 
+// Temporary diagnostic — remove after debugging
+if (str_contains($requestUri, 'debug-audio')) {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode([
+        'raw_uri' => $requestUri,
+        'parsed_path' => $path,
+        'curl_loaded' => extension_loaded('curl'),
+        'php_version' => PHP_VERSION,
+        'azure_key_set' => !empty($config['azure_tts_key'] ?? ''),
+        'azure_region' => $config['azure_tts_region'] ?? '(not set)',
+        'data_dir' => $config['data_dir'] ?? '(not set)',
+        'cache_dir_exists' => is_dir(($config['data_dir'] ?? '') . '/tts-cache'),
+        'cache_dir_writable' => is_writable(($config['data_dir'] ?? '') . '/tts-cache'),
+        'cached_files' => count(glob(($config['data_dir'] ?? '') . '/tts-cache/*.mp3') ?: []),
+    ]);
+    exit;
+}
+
 // ===================== ROUTE DISPATCH =====================
 
 if (str_starts_with($path, '/auth'))          { require __DIR__ . '/routes/auth.php';          }
@@ -70,19 +88,5 @@ if (str_starts_with($path, '/feedback'))      { require __DIR__ . '/routes/feedb
 if (str_starts_with($path, '/admin'))         { require __DIR__ . '/routes/admin.php';         }
 if (str_starts_with($path, '/tts'))           { require __DIR__ . '/routes/tts.php';           }
 
-// Temporary diagnostic — remove after debugging
-if ($path === '/debug-audio') {
-    $info = [
-        'curl_loaded' => extension_loaded('curl'),
-        'php_version' => PHP_VERSION,
-        'azure_key_set' => !empty($config['azure_tts_key'] ?? ''),
-        'azure_region' => $config['azure_tts_region'] ?? '(not set)',
-        'data_dir' => $config['data_dir'] ?? '(not set)',
-        'cache_dir_exists' => is_dir(($config['data_dir'] ?? '') . '/tts-cache'),
-        'cache_dir_writable' => is_writable(($config['data_dir'] ?? '') . '/tts-cache'),
-        'cached_files' => count(glob(($config['data_dir'] ?? '') . '/tts-cache/*.mp3') ?: []),
-    ];
-    json_response($info);
-}
 
 json_response(['error' => 'Not found'], 404);
