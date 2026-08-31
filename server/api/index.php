@@ -13,10 +13,8 @@ require __DIR__ . '/lib/auth.php';
 require __DIR__ . '/lib/helpers.php';
 require __DIR__ . '/lib/tts.php';
 
-// Default to JSON (TTS routes override with audio/mpeg)
-if (!str_starts_with(parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH), '/api/tts')) {
-    header('Content-Type: application/json; charset=utf-8');
-}
+// Always JSON
+header('Content-Type: application/json; charset=utf-8');
 
 // Load config and DB
 $config = load_config();

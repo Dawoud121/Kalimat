@@ -13,6 +13,7 @@ deployment:
     - /bin/cp dist/icon-512.png $DEPLOYPATH/icon-512.png
 
     # Deploy backend PHP
+    - /bin/rm -rf $DEPLOYPATH/api
     - /bin/cp -r server/api $DEPLOYPATH/api
     - /bin/cp server/.htaccess $DEPLOYPATH/.htaccess
     - /bin/cp server/config.sample.php $DEPLOYPATH/config.sample.php
