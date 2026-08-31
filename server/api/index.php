@@ -13,8 +13,10 @@ require __DIR__ . '/lib/auth.php';
 require __DIR__ . '/lib/helpers.php';
 require __DIR__ . '/lib/tts.php';
 
-// Always JSON
-header('Content-Type: application/json; charset=utf-8');
+// Default to JSON (TTS routes override with audio/mpeg)
+if (!str_starts_with(parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH), '/api/tts')) {
+    header('Content-Type: application/json; charset=utf-8');
+}
 
 // Load config and DB
 $config = load_config();
@@ -67,5 +69,20 @@ if (str_starts_with($path, '/sessions'))      { require __DIR__ . '/routes/sessi
 if (str_starts_with($path, '/feedback'))      { require __DIR__ . '/routes/feedback.php';      }
 if (str_starts_with($path, '/admin'))         { require __DIR__ . '/routes/admin.php';         }
 if (str_starts_with($path, '/tts'))           { require __DIR__ . '/routes/tts.php';           }
+
+// Temporary diagnostic — remove after debugging
+if ($path === '/debug-audio') {
+    $info = [
+        'curl_loaded' => extension_loaded('curl'),
+        'php_version' => PHP_VERSION,
+        'azure_key_set' => !empty($config['azure_tts_key'] ?? ''),
+        'azure_region' => $config['azure_tts_region'] ?? '(not set)',
+        'data_dir' => $config['data_dir'] ?? '(not set)',
+        'cache_dir_exists' => is_dir(($config['data_dir'] ?? '') . '/tts-cache'),
+        'cache_dir_writable' => is_writable(($config['data_dir'] ?? '') . '/tts-cache'),
+        'cached_files' => count(glob(($config['data_dir'] ?? '') . '/tts-cache/*.mp3') ?: []),
+    ];
+    json_response($info);
+}
 
 json_response(['error' => 'Not found'], 404);
