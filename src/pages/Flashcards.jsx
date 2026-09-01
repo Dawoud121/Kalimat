@@ -12,7 +12,7 @@ import {
   logStudySession,
 } from '../lib/dataService'
 import { applyRating, previewIntervals, getSRSStatus } from '../srs/sm2'
-import { Sparkles, CheckCircle2, RotateCcw, RefreshCw } from 'lucide-react'
+import { Sparkles, CheckCircle2, RotateCcw, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
 import SpeakButton from '../components/SpeakButton'
 
 const FLIP_DURATION = 400 // ms — must match CSS transition duration
@@ -67,6 +67,25 @@ const RATING_LABELS  = ['Hard', 'Easy']
 const RATING_CLASSES = ['again', 'good']
 const LIMIT_OPTIONS  = [10, 20, 50, null] // null = All
 
+const FIELD_OPTIONS = [
+  { value: 'arabic',   label: 'Arabic Word' },
+  { value: 'english',  label: 'English' },
+  { value: 'root',     label: 'Root' },
+  { value: 'singular', label: 'Singular' },
+  { value: 'dual',     label: 'Dual' },
+  { value: 'plural',   label: 'Plural' },
+  { value: 'past',     label: 'Past Tense' },
+  { value: 'present',  label: 'Present Tense' },
+  { value: 'command',  label: 'Command' },
+  { value: 'masdar',   label: 'Masdar' },
+]
+
+const ARABIC_FIELDS = new Set(['arabic', 'root', 'singular', 'dual', 'plural', 'past', 'present', 'command', 'masdar'])
+
+function getFieldValue(word, field) {
+  return word[field] || ''
+}
+
 export default function Flashcards() {
   const { currentUser, isGuest, guestData, updateGuestSrsCard } = useAuth()
   const [searchParams]  = useSearchParams()
@@ -80,6 +99,9 @@ export default function Flashcards() {
   const [selectedDeckId, setSelectedDeckId] = useState(urlDeckId ?? _savedSession?.selectedDeckId ?? null)
   const [isReviewMode,   setIsReviewMode]   = useState(_savedSession ? _savedSession.isReviewMode : urlMode === 'review')
   const [sessionLimit,   setSessionLimit]   = useState(_savedSession ? _savedSession.sessionLimit : urlMode === 'review' ? 20 : null)
+  const [showAdvanced,   setShowAdvanced]   = useState(false)
+  const [frontField,     setFrontField]     = useState(_savedSession?.frontField ?? 'arabic')
+  const [backField,      setBackField]      = useState(_savedSession?.backField ?? 'english')
 
   // ── Session state ─────────────────────────────────────────────────────────
   const [sessionCards, setSessionCards] = useState(() => _savedSession?.sessionCards ?? null)
@@ -103,9 +125,9 @@ export default function Flashcards() {
   // Persist session to module cache so navigation away and back resumes the session
   useEffect(() => {
     if (loadState === 'ready' && sessionCards) {
-      _savedSession = { sessionCards, deckMap, sessionIndex, done, stats, isReviewMode, sessionLimit, selectedDeckId }
+      _savedSession = { sessionCards, deckMap, sessionIndex, done, stats, isReviewMode, sessionLimit, selectedDeckId, frontField, backField }
     }
-  }, [loadState, sessionCards, deckMap, sessionIndex, done, stats, isReviewMode, sessionLimit, selectedDeckId])
+  }, [loadState, sessionCards, deckMap, sessionIndex, done, stats, isReviewMode, sessionLimit, selectedDeckId, frontField, backField])
 
   // Load decks for the setup screen and card-back deck name lookup
   useEffect(() => {
@@ -171,6 +193,15 @@ export default function Flashcards() {
         }
       }
 
+      // Filter out cards missing the selected front/back field
+      const isCustom = frontField !== 'arabic' || backField !== 'english'
+      if (isCustom) {
+        cards = cards.filter(c => {
+          const w = c.word
+          return getFieldValue(w, frontField) && getFieldValue(w, backField)
+        })
+      }
+
       let arr = [...cards]
 
       // Shuffle in practice mode
@@ -202,7 +233,7 @@ export default function Flashcards() {
       console.error('Flashcard load error:', err)
       setLoadState('error')
     }
-  }, [currentUser, selectedDeckId, isReviewMode, sessionLimit, setupDecks, isGuest, guestData])
+  }, [currentUser, selectedDeckId, isReviewMode, sessionLimit, setupDecks, isGuest, guestData, frontField, backField])
 
   // Auto-start when navigated from dashboard with ?mode=review (skips setup screen)
   // Only fires if there is no saved session to resume.
@@ -451,6 +482,47 @@ export default function Flashcards() {
             </div>
           )}
 
+          <div className="setup-advanced">
+            <button
+              className="setup-advanced-toggle"
+              onClick={() => setShowAdvanced(a => !a)}
+            >
+              <span>Advanced</span>
+              {showAdvanced ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+            {showAdvanced && (
+              <div className="setup-advanced-body">
+                <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', margin: '0 0 12px' }}>
+                  Customise what each side of the flashcard shows. Cards missing the selected fields are automatically skipped.
+                </p>
+                <div className="setup-row">
+                  <label>Front</label>
+                  <select
+                    className="form-select"
+                    value={frontField}
+                    onChange={e => setFrontField(e.target.value)}
+                  >
+                    {FIELD_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="setup-row">
+                  <label>Back</label>
+                  <select
+                    className="form-select"
+                    value={backField}
+                    onChange={e => setBackField(e.target.value)}
+                  >
+                    {FIELD_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
           <button className="btn btn-primary setup-start-btn" onClick={handleStart}>
             Start →
           </button>
@@ -557,6 +629,13 @@ export default function Flashcards() {
   const isFrequencySession = !!(selectedDeckId && setupDecks?.find(d => d.id === selectedDeckId)?.reviewFrequency)
   const progress = sessionIndex / sessionCards.length
   const word = currentCard.word
+  const isCustomMode = frontField !== 'arabic' || backField !== 'english'
+  const frontValue = getFieldValue(word, frontField)
+  const backValue = getFieldValue(word, backField)
+  const frontIsArabic = ARABIC_FIELDS.has(frontField)
+  const backIsArabic = ARABIC_FIELDS.has(backField)
+  const frontLabel = FIELD_OPTIONS.find(o => o.value === frontField)?.label
+  const backLabel = FIELD_OPTIONS.find(o => o.value === backField)?.label
 
   return (
     <div className="flashcard-page">
@@ -613,93 +692,122 @@ export default function Flashcards() {
           <div className={`flashcard${flipped ? ' flipped' : ''}`}>
             {/* Front */}
             <div className="flashcard-face flashcard-front">
-              <div className="flashcard-arabic" style={{ color: word.color || undefined }}>{word.arabic}</div>
-              <SpeakButton text={word.arabic} size={16} />
+              {isCustomMode ? (
+                <>
+                  <div className="flashcard-custom-label">{frontLabel}</div>
+                  <div className={frontIsArabic ? 'flashcard-arabic' : 'flashcard-english'} style={frontIsArabic && word.color ? { color: word.color } : undefined}>
+                    {frontValue}
+                  </div>
+                  {frontIsArabic && <SpeakButton text={frontValue} size={16} />}
+                  <div className="flashcard-hint">Click or press Space to reveal</div>
+                </>
+              ) : (
+                <>
+                  <div className="flashcard-arabic" style={{ color: word.color || undefined }}>{word.arabic}</div>
+                  <SpeakButton text={word.arabic} size={16} />
 
-              {(() => {
-                const pos = (word.partOfSpeech || '').toLowerCase()
-                const isVerb = pos === 'verb'
-                const isNounAdj = pos === 'noun' || pos === 'adjective'
-                const verbForms = [
-                  { label: 'Past',    value: word.past },
-                  { label: 'Present', value: word.present },
-                  { label: 'Command', value: word.command },
-                  { label: 'Masdar',  value: word.masdar },
-                ]
-                const nounForms = [
-                  { label: 'Singular', value: word.singular },
-                  { label: 'Dual',     value: word.dual },
-                  { label: 'Plural',   value: word.plural },
-                ]
-                const forms = isVerb ? verbForms : isNounAdj ? nounForms : [...verbForms, ...nounForms]
-                const hasForms = forms.some(f => f.value)
-                return (
-                  <>
-                    <button
-                      className="forms-btn"
-                      onClick={(e) => { e.stopPropagation(); setShowForms(f => !f) }}
-                    >
-                      {showForms ? 'Hide Forms' : 'Forms'}
-                    </button>
-                    {showForms ? (
-                      <div className="forms-grid" onClick={(e) => e.stopPropagation()}>
-                        {!hasForms
-                          ? <div className="forms-grid-empty">No forms added yet</div>
-                          : forms.map(f => (
-                              <div key={f.label} className="forms-grid-cell">
-                                <span className="forms-grid-label">{f.label}</span>
-                                <span className="forms-grid-value arabic">{f.value || '—'}</span>
-                              </div>
-                            ))
-                        }
-                      </div>
-                    ) : (
+                  {(() => {
+                    const pos = (word.partOfSpeech || '').toLowerCase()
+                    const isVerb = pos === 'verb'
+                    const isNounAdj = pos === 'noun' || pos === 'adjective'
+                    const verbForms = [
+                      { label: 'Past',    value: word.past },
+                      { label: 'Present', value: word.present },
+                      { label: 'Command', value: word.command },
+                      { label: 'Masdar',  value: word.masdar },
+                    ]
+                    const nounForms = [
+                      { label: 'Singular', value: word.singular },
+                      { label: 'Dual',     value: word.dual },
+                      { label: 'Plural',   value: word.plural },
+                    ]
+                    const forms = isVerb ? verbForms : isNounAdj ? nounForms : [...verbForms, ...nounForms]
+                    const hasForms = forms.some(f => f.value)
+                    return (
                       <>
-                        {word.partOfSpeech && (
-                          <div style={{
-                            background: 'var(--color-primary-muted)',
-                            color: 'var(--color-primary)',
-                            padding: '3px 12px',
-                            borderRadius: 'var(--radius-full)',
-                            fontSize: '0.8rem',
-                            fontWeight: 600,
-                            marginBottom: 4,
-                          }}>
-                            {word.partOfSpeech}
+                        <button
+                          className="forms-btn"
+                          onClick={(e) => { e.stopPropagation(); setShowForms(f => !f) }}
+                        >
+                          {showForms ? 'Hide Forms' : 'Forms'}
+                        </button>
+                        {showForms ? (
+                          <div className="forms-grid" onClick={(e) => e.stopPropagation()}>
+                            {!hasForms
+                              ? <div className="forms-grid-empty">No forms added yet</div>
+                              : forms.map(f => (
+                                  <div key={f.label} className="forms-grid-cell">
+                                    <span className="forms-grid-label">{f.label}</span>
+                                    <span className="forms-grid-value arabic">{f.value || '—'}</span>
+                                  </div>
+                                ))
+                            }
                           </div>
+                        ) : (
+                          <>
+                            {word.partOfSpeech && (
+                              <div style={{
+                                background: 'var(--color-primary-muted)',
+                                color: 'var(--color-primary)',
+                                padding: '3px 12px',
+                                borderRadius: 'var(--radius-full)',
+                                fontSize: '0.8rem',
+                                fontWeight: 600,
+                                marginBottom: 4,
+                              }}>
+                                {word.partOfSpeech}
+                              </div>
+                            )}
+                            {word.root && (
+                              <div className="arabic" style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem', marginBottom: 8 }}>
+                                Root: {word.root}
+                              </div>
+                            )}
+                            <div className="flashcard-hint">Click or press Space to reveal</div>
+                          </>
                         )}
-                        {word.root && (
-                          <div className="arabic" style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem', marginBottom: 8 }}>
-                            Root: {word.root}
-                          </div>
-                        )}
-                        <div className="flashcard-hint">Click or press Space to reveal</div>
                       </>
-                    )}
-                  </>
-                )
-              })()}
+                    )
+                  })()}
+                </>
+              )}
             </div>
 
             {/* Back */}
             <div className="flashcard-face flashcard-back">
-              <div className="flashcard-english">{word.english}</div>
-              {word.root && <div className="flashcard-root">Root: {word.root}</div>}
-              {word.partOfSpeech && <div className="flashcard-pos">{word.partOfSpeech}</div>}
-              {word.notes && (
-                <div style={{
-                  marginTop: 12,
-                  padding: '8px 12px',
-                  background: 'var(--color-warning-bg)',
-                  borderLeft: '3px solid var(--color-warning)',
-                  borderRadius: '0 var(--radius) var(--radius) 0',
-                  fontSize: '0.83rem',
-                  color: 'var(--color-text)',
-                  fontStyle: 'italic',
-                  textAlign: 'left',
-                }}>
-                  {word.notes}
-                </div>
+              {isCustomMode ? (
+                <>
+                  <div className="flashcard-custom-label">{backLabel}</div>
+                  <div className={backIsArabic ? 'flashcard-arabic' : 'flashcard-english'}>
+                    {backValue}
+                  </div>
+                  {backIsArabic && <SpeakButton text={backValue} size={16} />}
+                  {/* Context: show the word's arabic + english below */}
+                  <div style={{ marginTop: 16, fontSize: '0.82rem', color: 'var(--color-text-muted)', textAlign: 'center' }}>
+                    <span className="arabic">{word.arabic}</span> — {word.english}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flashcard-english">{word.english}</div>
+                  {word.root && <div className="flashcard-root">Root: {word.root}</div>}
+                  {word.partOfSpeech && <div className="flashcard-pos">{word.partOfSpeech}</div>}
+                  {word.notes && (
+                    <div style={{
+                      marginTop: 12,
+                      padding: '8px 12px',
+                      background: 'var(--color-warning-bg)',
+                      borderLeft: '3px solid var(--color-warning)',
+                      borderRadius: '0 var(--radius) var(--radius) 0',
+                      fontSize: '0.83rem',
+                      color: 'var(--color-text)',
+                      fontStyle: 'italic',
+                      textAlign: 'left',
+                    }}>
+                      {word.notes}
+                    </div>
+                  )}
+                </>
               )}
               {word.deckId && deckMap[word.deckId] && (
                 <div style={{ marginTop: 16, opacity: 0.7, fontSize: '0.8rem' }}>
