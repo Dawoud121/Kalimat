@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   ScrollText,
   FolderOpen,
+  PenLine,
 } from 'lucide-react'
 
 const ADMIN_EMAIL = 'dawoudhussein07@gmail.com'
@@ -37,6 +38,7 @@ const NAV_ITEMS = [
   { divider: true },
   { icon: BookOpenText,    label: 'Quranic Lexicon',  mobileLabel: 'Quran',     path: '/quran' },
   { icon: ScrollText,      label: 'Stories',          path: '/stories' },
+  { icon: PenLine,         label: 'Notebook',         path: '/notebook' },
   { divider: true },
   { icon: Globe,           label: 'Community Decks',  mobileLabel: 'Community', path: '/community' },
   { icon: GitPullRequest,  label: 'Contributions',    mobileLabel: 'Contribute', path: '/contributions' },

@@ -25,6 +25,7 @@ import SpeedRound from './pages/SpeedRound'
 import SpellItOut from './pages/SpellItOut'
 import AdminStats from './pages/AdminStats'
 import Stories from './pages/Stories'
+import Notebook from './pages/Notebook'
 
 // Apply saved theme on startup
 function ThemeInit() {
@@ -130,6 +131,7 @@ function AppRoutes() {
         <Route path="stats" element={<Stats />} />
         <Route path="admin" element={<AdminStats />} />
         <Route path="stories" element={<Stories />} />
+        <Route path="notebook" element={<Notebook />} />
         <Route path="settings" element={<Settings />} />
       </Route>
 

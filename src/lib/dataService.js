@@ -859,3 +859,45 @@ export async function getUserStoryProgress(userId) {
 export async function upsertStoryProgress(userId, storyId, segmentsRead, completed) {
   await api.put('/stories/progress', { storyId, segmentsRead, completed })
 }
+
+// ── Notebook ──────────────────────────────────────────────────────────────
+
+export async function getNotebookClasses() {
+  return await api.get('/notebook/classes')
+}
+
+export async function createNotebookClass({ title }) {
+  return await api.post('/notebook/classes', { title })
+}
+
+export async function updateNotebookClass(id, updates) {
+  return await api.put(`/notebook/classes/${id}`, updates)
+}
+
+export async function deleteNotebookClass(id) {
+  return await api.del(`/notebook/classes/${id}`)
+}
+
+export async function getNotebookLessons(classId) {
+  return await api.get(`/notebook/classes/${classId}/lessons`)
+}
+
+export async function createNotebookLesson(classId, { title, date }) {
+  return await api.post(`/notebook/classes/${classId}/lessons`, { title, date })
+}
+
+export async function updateNotebookLesson(id, updates) {
+  return await api.put(`/notebook/lessons/${id}`, updates)
+}
+
+export async function deleteNotebookLesson(id) {
+  return await api.del(`/notebook/lessons/${id}`)
+}
+
+export async function getNotebookStrokes(lessonId) {
+  return await api.get(`/notebook/lessons/${lessonId}/strokes`)
+}
+
+export async function saveNotebookStrokes(lessonId, strokes) {
+  return await api.put(`/notebook/lessons/${lessonId}/strokes`, { strokes })
+}
