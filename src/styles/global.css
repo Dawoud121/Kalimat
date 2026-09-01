@@ -292,7 +292,7 @@ body.has-secondary-sidebar .main-wrapper {
   height: 1px;
   background: var(--color-border);
   margin: clamp(2px, 0.3vw, 4px) clamp(8px, 0.8vw, 12px);
-  flex-shrink: 1;
+  flex-shrink: 0;
   transition: margin 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
