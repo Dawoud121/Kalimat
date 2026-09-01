@@ -1,6 +1,6 @@
 // v2.9.0
 import React, { useState } from 'react'
-import { Pen, Highlighter, Eraser, Undo2, Redo2, PenTool, Trash2, Lasso, Type, ImagePlus, Spline, Download } from 'lucide-react'
+import { Pen, Highlighter, Eraser, Undo2, Redo2, Trash2, Lasso, Type, ImagePlus, Spline, Download } from 'lucide-react'
 
 const COLORS = [
   { value: '#000000', label: 'Black' },
@@ -22,7 +22,6 @@ export default function NotebookToolbar({
   tool, onToolChange,
   color, onColorChange,
   thickness, onThicknessChange,
-  pencilOnly, onPencilOnlyToggle,
   smoothing, onSmoothingToggle,
   canUndo, canRedo, onUndo, onRedo,
   onClear,
@@ -128,13 +127,6 @@ export default function NotebookToolbar({
 
       <div className="notebook-toolbar-divider" />
       <div className="notebook-toolbar-group">
-        <button
-          className={`notebook-tool-btn${pencilOnly ? ' active' : ''}`}
-          onClick={onPencilOnlyToggle}
-          title={pencilOnly ? 'Pencil only (on)' : 'Pencil only (off)'}
-        >
-          <PenTool size={16} />
-        </button>
         <button
           className={`notebook-tool-btn${smoothing ? ' active' : ''}`}
           onClick={onSmoothingToggle}

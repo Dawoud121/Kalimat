@@ -7,10 +7,9 @@ import {
   getNotebookStrokes, updateLessonTemplate,
 } from '../lib/dataService'
 import NotebookCanvas from '../components/notebook/NotebookCanvas'
-import HandwritingRecognizer from '../components/notebook/HandwritingRecognizer'
 import {
   ChevronDown, ChevronRight, Plus, Pencil, Trash2, BookOpen, FileText, MoreVertical, X,
-  PanelLeftOpen, PanelLeftClose, ScanText,
+  PanelLeftOpen, PanelLeftClose,
 } from 'lucide-react'
 
 const TEMPLATES = [
@@ -35,9 +34,6 @@ export default function Notebook() {
   // Sidebar collapse
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
-  // Handwriting recognizer
-  const [showRecognizer, setShowRecognizer] = useState(false)
-
   // CRUD modals
   const [showNewClass, setShowNewClass] = useState(false)
   const [newClassTitle, setNewClassTitle] = useState('')
@@ -60,6 +56,24 @@ export default function Notebook() {
       .then(data => { setClasses(data); setLoading(false) })
       .catch(err => { console.error(err); setLoading(false) })
   }, [currentUser])
+
+  // Restore last used lesson after classes load
+  useEffect(() => {
+    if (loading || classes.length === 0) return
+    try {
+      const saved = JSON.parse(localStorage.getItem('kalimat_last_lesson'))
+      if (!saved?.lessonId || !saved?.classId) return
+      // Check that the class exists
+      if (!classes.some(c => c.id === saved.classId)) return
+      // Expand the class and load its lessons, then select the saved lesson
+      setExpandedClassIds(prev => new Set([...prev, saved.classId]))
+      getNotebookLessons(saved.classId).then(lessons => {
+        setLessonsMap(prev => ({ ...prev, [saved.classId]: lessons }))
+        const lesson = lessons.find(l => l.id === saved.lessonId)
+        if (lesson) selectLesson(lesson)
+      }).catch(err => console.error('Failed to restore last lesson:', err))
+    } catch { /* ignore invalid localStorage */ }
+  }, [loading, classes])
 
   // Load lessons when a class is expanded
   const toggleClass = useCallback(async (classId) => {
@@ -85,6 +99,8 @@ export default function Notebook() {
     setSelectedLesson(lesson)
     setStrokes(null)
     setSidebarOpen(false) // auto-close sidebar on selection
+    // Remember last used lesson
+    localStorage.setItem('kalimat_last_lesson', JSON.stringify({ lessonId: lesson.id, classId: lesson.class_id }))
     try {
       const data = await getNotebookStrokes(lesson.id)
       setStrokes(data)
@@ -196,16 +212,6 @@ export default function Notebook() {
       }
     } catch (err) { console.error(err) }
     setMenuOpen(null)
-  }
-
-  // ── Handwriting recognition insert ──
-  function handleRecognizedText(text) {
-    // Insert as a text element on the canvas via the toolbar text tool
-    // For simplicity, we'll trigger text tool mode and let user place it
-    // Or we can directly add it — but we need canvas access
-    // For now, just copy to clipboard and notify
-    navigator.clipboard?.writeText(text)
-    alert('Text copied to clipboard. Use the Text tool (T) to place it on the canvas.')
   }
 
   // Close menus on outside click
@@ -416,14 +422,6 @@ export default function Notebook() {
                     <option key={t.value} value={t.value}>{t.label}</option>
                   ))}
                 </select>
-                {/* Handwriting recognition */}
-                <button
-                  className="notebook-tool-btn"
-                  onClick={() => setShowRecognizer(true)}
-                  title="Handwriting Recognition"
-                >
-                  <ScanText size={16} />
-                </button>
               </div>
             </div>
             <NotebookCanvas
@@ -461,13 +459,6 @@ export default function Notebook() {
         )}
       </div>
 
-      {/* Handwriting recognizer modal */}
-      {showRecognizer && (
-        <HandwritingRecognizer
-          onRecognized={handleRecognizedText}
-          onClose={() => setShowRecognizer(false)}
-        />
-      )}
     </div>
   )
 }
