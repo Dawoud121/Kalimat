@@ -13,7 +13,6 @@ import WordBank from './pages/WordBank'
 import Decks from './pages/Decks'
 import Dictionary from './pages/Dictionary'
 import QuranicLexicon from './pages/QuranicLexicon'
-import CommunityDecks from './pages/CommunityDecks'
 import Settings from './pages/Settings'
 import Stats from './pages/Stats'
 import Contributions from './pages/Contributions'
@@ -120,7 +119,7 @@ function AppRoutes() {
         <Route path="decks" element={<Decks />} />
         <Route path="dictionary" element={<Dictionary />} />
         <Route path="quran" element={<QuranicLexicon />} />
-        <Route path="community" element={<CommunityDecks />} />
+        <Route path="community" element={<Navigate to="/decks?section=team" replace />} />
         <Route path="games" element={<Games />} />
         <Route path="games/memory" element={<MemoryMatch />} />
         <Route path="games/multiple-choice" element={<MultipleChoice />} />

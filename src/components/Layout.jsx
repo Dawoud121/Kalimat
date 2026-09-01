@@ -8,7 +8,7 @@ import { useAuth } from '../auth/AuthContext'
 const ADMIN_EMAIL = 'dawoudhussein07@gmail.com'
 
 // Routes that get a secondary sidebar
-const SECONDARY_SIDEBAR_ROUTES = ['/contributions', '/community', '/word-bank', '/admin', '/stories', '/stats']
+const SECONDARY_SIDEBAR_ROUTES = ['/contributions', '/decks', '/word-bank', '/admin', '/stories', '/stats']
 
 const SECONDARY_SIDEBAR_CONFIG = {
   '/contributions': {
@@ -37,21 +37,22 @@ const SECONDARY_SIDEBAR_CONFIG = {
       },
     ],
   },
-  '/community': {
-    title: 'Community Decks',
-    defaultSection: 'team',
+  '/decks': {
+    title: 'Decks',
+    defaultSection: 'my-decks',
     groups: [
+      {
+        label: 'MINE',
+        items: [
+          { key: 'my-decks', label: 'My Decks' },
+          { key: 'uploads',  label: 'My Uploads' },
+        ],
+      },
       {
         label: 'BROWSE',
         items: [
           { key: 'team',   label: 'Kalimat Team' },
           { key: 'browse', label: 'Browse All' },
-        ],
-      },
-      {
-        label: 'MINE',
-        items: [
-          { key: 'mine', label: 'My Uploads' },
         ],
       },
     ],

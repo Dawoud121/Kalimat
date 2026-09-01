@@ -215,10 +215,10 @@ function DeckCard({ deck, imported, isOwn, isAdmin, onPreview, onImport, onUnsha
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-export default function CommunityDecks() {
+export default function CommunityDecks({ forceSection = null }) {
   const { currentUser, isGuest, importGuestDeck, guestData } = useAuth()
   const [searchParams] = useSearchParams()
-  const activeTab = searchParams.get('section') || 'team'
+  const activeTab = forceSection || searchParams.get('section') || 'team'
   const [search,         setSearch]         = useState('')
   const [preview,        setPreview]        = useState(null)
   const [importing,      setImporting]      = useState(false)
