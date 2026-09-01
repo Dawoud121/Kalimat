@@ -1072,7 +1072,7 @@ body.has-secondary-sidebar .main-wrapper {
 
 .flashcard-back {
   background: var(--color-brand-muted);
-  transform: rotateY(180deg) translateZ(1px);
+  transform: rotateY(180deg);
   color: var(--color-text);
   border-top: 3px solid var(--color-brand);
 }
@@ -1280,16 +1280,17 @@ body.has-secondary-sidebar .main-wrapper {
 }
 
 /* ===== SRS RATING BUTTONS ===== */
-.rating-buttons-inline {
-  position: absolute;
-  bottom: 16px;
-  left: 16px;
-  right: 16px;
+.rating-buttons-below {
   display: flex;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 600px;
+  margin: 12px auto 0;
+  transition: opacity 0.2s, visibility 0.2s;
 }
-.rating-buttons-inline .rating-btn {
+
+.rating-buttons-below .rating-btn {
   flex: 1;
 }
 
@@ -1482,9 +1483,9 @@ body.has-secondary-sidebar .main-wrapper {
 }
 
 .rating-btn.good {
-  background: #e8f0fe;
-  color: #1a73e8;
-  border-color: rgba(26, 115, 232, 0.25);
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  border-color: rgba(24, 226, 153, 0.25);
 }
 
 .rating-btn.easy {

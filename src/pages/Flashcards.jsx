@@ -814,22 +814,23 @@ export default function Flashcards() {
                   {deckMap[word.deckId]}
                 </div>
               )}
-              {/* Rating buttons inside the back face */}
-              <div className="rating-buttons-inline">
-                {RATING_LABELS.map((label, i) => (
-                  <button
-                    key={label}
-                    className={`rating-btn ${RATING_CLASSES[i]}`}
-                    onClick={(e) => { e.stopPropagation(); handleRate(i) }}
-                    disabled={isAnimating.current}
-                  >
-                    <span className="rating-label">{label}</span>
-                    <span className="rating-interval">{intervals[i]}</span>
-                  </button>
-                ))}
-              </div>
             </div>
           </div>
+        </div>
+
+        {/* Rating buttons below the card */}
+        <div className="rating-buttons-below" style={{ visibility: flipped ? 'visible' : 'hidden', opacity: flipped ? 1 : 0 }}>
+          {RATING_LABELS.map((label, i) => (
+            <button
+              key={label}
+              className={`rating-btn ${RATING_CLASSES[i]}`}
+              onClick={() => handleRate(i)}
+              disabled={isAnimating.current}
+            >
+              <span className="rating-label">{label}</span>
+              <span className="rating-interval">{intervals[i]}</span>
+            </button>
+          ))}
         </div>
 
         <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', textAlign: 'center', minHeight: '1.2em' }}>
