@@ -14,7 +14,6 @@ import {
 import { applyRating, previewIntervals, getSRSStatus } from '../srs/sm2'
 import { Sparkles, CheckCircle2, RotateCcw, RefreshCw } from 'lucide-react'
 import SpeakButton from '../components/SpeakButton'
-import Scratchpad from '../components/Scratchpad'
 
 const FLIP_DURATION = 400 // ms — must match CSS transition duration
 
@@ -724,8 +723,6 @@ export default function Flashcards() {
             </div>
           </div>
         </div>
-
-        <Scratchpad clearTrigger={sessionIndex} />
 
         <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', textAlign: 'center', minHeight: '1.2em' }}>
           {flipped
