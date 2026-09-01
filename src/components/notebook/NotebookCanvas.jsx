@@ -2,11 +2,9 @@
 import React, { useRef, useState, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react'
 import NotebookToolbar from './NotebookToolbar'
 import SelectionToolbar from './SelectionToolbar'
-import NotebookMinimap from './NotebookMinimap'
 import { saveNotebookStrokes } from '../../lib/dataService'
 
 const HIGHLIGHTER_OPACITY = 0.3
-const PAGE_WIDTH = 800   // fixed page width in canvas-space px
 const LINE_SPACING = 32
 const LINE_COLOR = '#d0d8e0'
 const LINE_COLOR_DARK = '#2a2f36'
@@ -15,12 +13,9 @@ const GRID_COLOR_DARK = '#2a2f36'
 const MIN_ZOOM = 0.3
 const MAX_ZOOM = 5
 const PAGE_PADDING_BOTTOM = 600 // blank space below last element
-const GUTTER_COLOR = '#ebebeb'
-const GUTTER_COLOR_DARK = '#141414'
 const PAGE_BG = '#faf9f6'
 const PAGE_BG_DARK = '#1e1e1e'
-const PAGE_EDGE_COLOR = '#ccc'
-const PAGE_EDGE_COLOR_DARK = '#333'
+const EXPORT_WIDTH = 800 // fixed width for PNG/PDF exports
 
 // ── Ramer-Douglas-Peucker point simplification ──
 function rdpSimplify(points, tolerance) {
@@ -244,7 +239,9 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   const gestureRef = useRef({ active: false, startDist: 0, startZoom: 1, startX: 0, startY: 0, startViewX: 0, startViewY: 0, pointers: new Map() })
 
   const [tool, setTool] = useState('pen')
-  const [color, setColor] = useState('#000000')
+  const [color, setColor] = useState(() => {
+    return document.documentElement.getAttribute('data-theme') === 'dark' ? '#ffffff' : '#000000'
+  })
   const [thickness, setThickness] = useState(4)
   const [pencilOnly, setPencilOnly] = useState(false)
   const [smoothing, setSmoothing] = useState(true)
@@ -263,8 +260,6 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   const [showSelToolbar, setShowSelToolbar] = useState(false)
   const selDragRef = useRef(null) // { startX, startY, origPositions }
 
-  // Wrapper dimensions for minimap
-  const [wrapperDims, setWrapperDims] = useState({ w: 0, h: 0 })
 
   useImperativeHandle(ref, () => ({
     save: () => saveNow(),
@@ -320,7 +315,6 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     const resize = () => {
       const rect = wrapper.getBoundingClientRect()
       const dpr = window.devicePixelRatio || 1
-      setWrapperDims({ w: rect.width, h: rect.height })
       ;[staticCanvasRef, activeCanvasRef, linesCanvasRef].forEach(r => {
         const c = r.current
         if (!c) return
@@ -341,17 +335,8 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   // ── Viewport clamping ──
   function clampViewport() {
     const v = viewRef.current
-    const wrapper = wrapperRef.current
-    if (!wrapper) return
-    const w = wrapper.clientWidth
-    const pageW = PAGE_WIDTH * v.zoom
-    // Horizontal: center if page narrower than viewport, else clamp
-    if (pageW <= w) {
-      v.x = (w - pageW) / 2
-    } else {
-      v.x = Math.min(0, Math.max(w - pageW, v.x))
-    }
-    // Vertical: don't scroll above page top
+    // Page fills full width — just prevent scrolling past top-left origin
+    v.x = Math.min(0, v.x)
     v.y = Math.min(0, v.y)
   }
 
@@ -402,30 +387,9 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     ctx.clearRect(0, 0, c.width, c.height)
     ctx.scale(dpr, dpr)
 
-    // Fill gutter (area outside the page)
-    ctx.fillStyle = dark ? GUTTER_COLOR_DARK : GUTTER_COLOR
-    ctx.fillRect(0, 0, w, h)
-
-    // Fill page area
-    const pageLeft = v.x
-    const pageRight = v.x + PAGE_WIDTH * v.zoom
-    const pageTop = v.y
+    // Fill entire canvas with page background
     ctx.fillStyle = dark ? PAGE_BG_DARK : PAGE_BG
-    ctx.fillRect(
-      Math.max(0, pageLeft), Math.max(0, pageTop),
-      Math.min(w, pageRight) - Math.max(0, pageLeft),
-      h - Math.max(0, pageTop)
-    )
-
-    // Page edge lines
-    ctx.strokeStyle = dark ? PAGE_EDGE_COLOR_DARK : PAGE_EDGE_COLOR
-    ctx.lineWidth = 1
-    if (pageLeft >= 0 && pageLeft <= w) {
-      ctx.beginPath(); ctx.moveTo(pageLeft, 0); ctx.lineTo(pageLeft, h); ctx.stroke()
-    }
-    if (pageRight >= 0 && pageRight <= w) {
-      ctx.beginPath(); ctx.moveTo(pageRight, 0); ctx.lineTo(pageRight, h); ctx.stroke()
-    }
+    ctx.fillRect(0, 0, w, h)
 
     // Draw template pattern
     const tmpl = template || 'lined'
@@ -442,56 +406,47 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     ctx.lineWidth = 0.5
     const startLine = Math.max(0, Math.floor(-v.y / (LINE_SPACING * v.zoom)))
     const endLine = Math.ceil((h - v.y) / (LINE_SPACING * v.zoom))
-    const left = Math.max(0, v.x)
-    const right = Math.min(w, v.x + PAGE_WIDTH * v.zoom)
-    if (left >= right) return
     for (let i = startLine; i <= endLine; i++) {
       const y = v.y + i * LINE_SPACING * v.zoom
       if (y < 0 || y > h) continue
-      ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
     }
   }
 
   function drawGridTemplate(ctx, w, h, v, dark) {
     ctx.strokeStyle = dark ? GRID_COLOR_DARK : GRID_COLOR
     ctx.lineWidth = 0.5
-    const left = Math.max(0, v.x)
-    const right = Math.min(w, v.x + PAGE_WIDTH * v.zoom)
-    if (left >= right) return
     // Horizontal
     const startH = Math.max(0, Math.floor(-v.y / (LINE_SPACING * v.zoom)))
     const endH = Math.ceil((h - v.y) / (LINE_SPACING * v.zoom))
     for (let i = startH; i <= endH; i++) {
       const y = v.y + i * LINE_SPACING * v.zoom
       if (y < 0 || y > h) continue
-      ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
     }
     // Vertical
     const startV = Math.max(0, Math.floor(-v.x / (LINE_SPACING * v.zoom)))
-    const endV = Math.ceil((right - v.x) / (LINE_SPACING * v.zoom))
-    for (let i = startV; i <= endV && i <= PAGE_WIDTH / LINE_SPACING; i++) {
+    const endV = Math.ceil((w - v.x) / (LINE_SPACING * v.zoom))
+    for (let i = startV; i <= endV; i++) {
       const x = v.x + i * LINE_SPACING * v.zoom
-      if (x < left || x > right) continue
+      if (x < 0 || x > w) continue
       ctx.beginPath(); ctx.moveTo(x, Math.max(0, v.y)); ctx.lineTo(x, h); ctx.stroke()
     }
   }
 
   function drawDottedTemplate(ctx, w, h, v, dark) {
     ctx.fillStyle = dark ? GRID_COLOR_DARK : GRID_COLOR
-    const left = Math.max(0, v.x)
-    const right = Math.min(w, v.x + PAGE_WIDTH * v.zoom)
-    if (left >= right) return
     const startH = Math.max(0, Math.floor(-v.y / (LINE_SPACING * v.zoom)))
     const endH = Math.ceil((h - v.y) / (LINE_SPACING * v.zoom))
     const startV = Math.max(0, Math.floor(-v.x / (LINE_SPACING * v.zoom)))
-    const endV = Math.ceil((right - v.x) / (LINE_SPACING * v.zoom))
+    const endV = Math.ceil((w - v.x) / (LINE_SPACING * v.zoom))
     const dotR = Math.max(0.8, 1 * v.zoom)
     for (let row = startH; row <= endH; row++) {
       const y = v.y + row * LINE_SPACING * v.zoom
       if (y < 0 || y > h) continue
-      for (let col = startV; col <= endV && col <= PAGE_WIDTH / LINE_SPACING; col++) {
+      for (let col = startV; col <= endV; col++) {
         const x = v.x + col * LINE_SPACING * v.zoom
-        if (x < left || x > right) continue
+        if (x < 0 || x > w) continue
         ctx.beginPath(); ctx.arc(x, y, dotR, 0, Math.PI * 2); ctx.fill()
       }
     }
@@ -500,9 +455,6 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   function drawArabicTemplate(ctx, w, h, v, dark) {
     const spacing = 48 // wider for Arabic script
     ctx.lineWidth = 0.5
-    const left = Math.max(0, v.x)
-    const right = Math.min(w, v.x + PAGE_WIDTH * v.zoom)
-    if (left >= right) return
     const startLine = Math.max(0, Math.floor(-v.y / (spacing * v.zoom)))
     const endLine = Math.ceil((h - v.y) / (spacing * v.zoom))
     for (let i = startLine; i <= endLine; i++) {
@@ -511,7 +463,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       ctx.strokeStyle = dark ? '#3a3f46' : '#b0b8c0'
       ctx.lineWidth = 0.8
       if (baseY >= 0 && baseY <= h) {
-        ctx.beginPath(); ctx.moveTo(left, baseY); ctx.lineTo(right, baseY); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(0, baseY); ctx.lineTo(w, baseY); ctx.stroke()
       }
       // Midline guide (dashed, lighter)
       const midY = baseY + spacing * v.zoom * 0.5
@@ -519,7 +471,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       ctx.lineWidth = 0.3
       ctx.setLineDash([4, 4])
       if (midY >= 0 && midY <= h) {
-        ctx.beginPath(); ctx.moveTo(left, midY); ctx.lineTo(right, midY); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(0, midY); ctx.lineTo(w, midY); ctx.stroke()
       }
       ctx.setLineDash([])
     }
@@ -767,8 +719,8 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
           id: crypto.randomUUID(),
           x: pos.x,
           y: pos.y,
-          width: Math.min(width, PAGE_WIDTH * 0.8),
-          height: Math.min(width, PAGE_WIDTH * 0.8) * (height / width),
+          width: Math.min(width, 640),
+          height: Math.min(width, 640) * (height / width),
           src: dataUrl,
         }
         preloadImage(dataUrl)
@@ -1021,7 +973,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
 
     // Stroke smoothing (RDP)
     if (smoothing && stroke.points.length > 3) {
-      stroke.points = rdpSimplify(stroke.points, 1.0)
+      stroke.points = rdpSimplify(stroke.points, 0.3)
     }
 
     elementsRef.current.push(stroke)
@@ -1330,7 +1282,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
           const v = viewRef.current
           const cx = (-v.x + (wrapper.clientWidth / 2)) / v.zoom
           const cy = (-v.y + (wrapper.clientHeight / 2)) / v.zoom
-          const imgW = Math.min(width, PAGE_WIDTH * 0.8)
+          const imgW = Math.min(width, 640)
           const imgH = imgW * (height / width)
           const imgEl = {
             type: 'image',
@@ -1362,15 +1314,15 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   function exportAsPNG() {
     const pageBottom = getPageBottom()
     const offscreen = document.createElement('canvas')
-    offscreen.width = PAGE_WIDTH * 2
+    offscreen.width = EXPORT_WIDTH * 2
     offscreen.height = pageBottom * 2
     const ctx = offscreen.getContext('2d')
     ctx.scale(2, 2)
     // Fill page background
     ctx.fillStyle = getIsDark() ? PAGE_BG_DARK : PAGE_BG
-    ctx.fillRect(0, 0, PAGE_WIDTH, pageBottom)
+    ctx.fillRect(0, 0, EXPORT_WIDTH, pageBottom)
     // Draw template
-    drawTemplateOnExport(ctx, PAGE_WIDTH, pageBottom)
+    drawTemplateOnExport(ctx, EXPORT_WIDTH, pageBottom)
     // Draw all elements
     elementsRef.current.forEach(el => drawElement(ctx, el, imageCacheRef.current))
     // Download
@@ -1385,26 +1337,26 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       const jsPDFModule = await import('jspdf')
       const jsPDF = jsPDFModule.default || jsPDFModule.jsPDF
       const pageBottom = getPageBottom()
-      const pdfPageH = PAGE_WIDTH * 1.414 // A4 ratio
+      const pdfPageH = EXPORT_WIDTH * 1.414 // A4 ratio
       const pageCount = Math.ceil(pageBottom / pdfPageH)
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [PAGE_WIDTH, pdfPageH] })
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [EXPORT_WIDTH, pdfPageH] })
 
       for (let p = 0; p < pageCount; p++) {
         if (p > 0) pdf.addPage()
         const offscreen = document.createElement('canvas')
-        offscreen.width = PAGE_WIDTH * 2
+        offscreen.width = EXPORT_WIDTH * 2
         offscreen.height = pdfPageH * 2
         const ctx = offscreen.getContext('2d')
         ctx.scale(2, 2)
         ctx.fillStyle = getIsDark() ? PAGE_BG_DARK : PAGE_BG
-        ctx.fillRect(0, 0, PAGE_WIDTH, pdfPageH)
+        ctx.fillRect(0, 0, EXPORT_WIDTH, pdfPageH)
         ctx.save()
         ctx.translate(0, -p * pdfPageH)
-        drawTemplateOnExport(ctx, PAGE_WIDTH, pageBottom)
+        drawTemplateOnExport(ctx, EXPORT_WIDTH, pageBottom)
         elementsRef.current.forEach(el => drawElement(ctx, el, imageCacheRef.current))
         ctx.restore()
         const imgData = offscreen.toDataURL('image/jpeg', 0.92)
-        pdf.addImage(imgData, 'JPEG', 0, 0, PAGE_WIDTH, pdfPageH)
+        pdf.addImage(imgData, 'JPEG', 0, 0, EXPORT_WIDTH, pdfPageH)
       }
 
       pdf.save(`notebook-${lessonId}.pdf`)
@@ -1450,17 +1402,6 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
         ctx.setLineDash([])
       }
     }
-  }
-
-  // ── Minimap navigation ──
-  function handleMinimapNavigate({ x, y }) {
-    const v = viewRef.current
-    v.x = x
-    v.y = y
-    clampViewport()
-    setZoomLevel(v.zoom)
-    redrawAll()
-    updateSelectionBoundsScreen()
   }
 
   // ── Tool change clears selection ──
@@ -1546,16 +1487,6 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
             onClose={() => { setSelectedIndices(null); setSelectionBounds(null); setShowSelToolbar(false) }}
           />
         )}
-        {/* Minimap */}
-        <NotebookMinimap
-          elements={elementsRef.current}
-          viewRef={viewRef}
-          pageWidth={PAGE_WIDTH}
-          pageBottom={getPageBottom()}
-          wrapperWidth={wrapperDims.w}
-          wrapperHeight={wrapperDims.h}
-          onNavigate={handleMinimapNavigate}
-        />
       </div>
       {zoomLevel !== 1 && (
         <div className="notebook-zoom-indicator">{Math.round(zoomLevel * 100)}%</div>

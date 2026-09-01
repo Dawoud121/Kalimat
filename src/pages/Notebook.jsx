@@ -33,7 +33,7 @@ export default function Notebook() {
   const [loading, setLoading] = useState(true)
 
   // Sidebar collapse
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
   // Handwriting recognizer
   const [showRecognizer, setShowRecognizer] = useState(false)
@@ -229,19 +229,6 @@ export default function Notebook() {
 
   return (
     <div className="notebook-page">
-      {/* Collapsed sidebar toggle */}
-      {!sidebarOpen && (
-        <div className="notebook-panel-collapsed">
-          <button
-            className="notebook-tool-btn"
-            onClick={() => setSidebarOpen(true)}
-            title="Open notebook panel"
-          >
-            <PanelLeftOpen size={18} />
-          </button>
-        </div>
-      )}
-
       {/* Left panel: class/lesson tree (overlay when open) */}
       {sidebarOpen && (
         <>
@@ -404,6 +391,16 @@ export default function Notebook() {
           <>
             <div className="notebook-lesson-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                {!sidebarOpen && (
+                  <button
+                    className="notebook-tool-btn"
+                    onClick={() => setSidebarOpen(true)}
+                    title="Open notebook panel"
+                    style={{ marginRight: 4 }}
+                  >
+                    <PanelLeftOpen size={18} />
+                  </button>
+                )}
                 <h2 style={{ margin: 0 }}>{selectedLesson.title}</h2>
                 <span className="notebook-lesson-header-date">{selectedLesson.date}</span>
               </div>
@@ -443,6 +440,16 @@ export default function Notebook() {
           </div>
         ) : (
           <div className="notebook-empty-state">
+            {!sidebarOpen && (
+              <button
+                className="notebook-tool-btn"
+                onClick={() => setSidebarOpen(true)}
+                title="Open notebook panel"
+                style={{ position: 'absolute', top: 12, left: 12 }}
+              >
+                <PanelLeftOpen size={18} />
+              </button>
+            )}
             <BookOpen size={48} strokeWidth={1} style={{ color: 'var(--color-text-muted)' }} />
             <p>Select a lesson to start writing</p>
             {classes.length === 0 && (

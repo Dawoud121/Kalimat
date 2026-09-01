@@ -4789,17 +4789,6 @@ input[type="checkbox"] {
 }
 
 /* ── Left panel (collapsible) ─────────────────────────────────────────── */
-.notebook-panel-collapsed {
-  width: 44px;
-  min-width: 44px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding-top: 12px;
-  border-right: 1px solid var(--color-border);
-  background: var(--color-surface);
-}
-
 .notebook-panel-backdrop {
   position: fixed;
   inset: 0;
@@ -4817,8 +4806,8 @@ input[type="checkbox"] {
 }
 
 .notebook-panel-open {
-  position: absolute;
-  left: 0;
+  position: fixed;
+  left: var(--sidebar-collapsed-width, 60px);
   top: 0;
   bottom: 0;
   z-index: 30;
@@ -5062,6 +5051,7 @@ input[type="checkbox"] {
   gap: 12px;
   color: var(--color-text-muted);
   font-size: 0.9rem;
+  position: relative;
 }
 
 /* ── Canvas area ──────────────────────────────────────────────────────── */
@@ -5076,13 +5066,13 @@ input[type="checkbox"] {
 .notebook-canvas-wrapper {
   flex: 1;
   position: relative;
-  background: #ebebeb;
+  background: #faf9f6;
   overflow: hidden;
   outline: none;
 }
 
 [data-theme="dark"] .notebook-canvas-wrapper {
-  background: #141414;
+  background: #1e1e1e;
 }
 
 .notebook-canvas {
@@ -5123,20 +5113,6 @@ input[type="checkbox"] {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   white-space: nowrap;
-}
-
-/* ── Minimap ─────────────────────────────────────────────────────────── */
-.notebook-minimap {
-  opacity: 0.8;
-  transition: opacity 0.15s;
-}
-
-.notebook-minimap:hover {
-  opacity: 1;
-}
-
-[data-theme="dark"] .notebook-minimap canvas {
-  filter: invert(0.9) hue-rotate(180deg);
 }
 
 /* ── Toolbar ──────────────────────────────────────────────────────────── */
@@ -5257,10 +5233,8 @@ input[type="checkbox"] {
   .notebook-page {
     flex-direction: column;
   }
-  .notebook-panel-collapsed {
-    display: none;
-  }
   .notebook-panel-open {
+    left: 0;
     width: 100%;
     max-height: 50vh;
     position: relative;
@@ -5270,9 +5244,6 @@ input[type="checkbox"] {
   }
   .notebook-canvas-wrapper {
     min-height: 400px;
-  }
-  .notebook-minimap {
-    display: none;
   }
 }
 
