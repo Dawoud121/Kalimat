@@ -66,6 +66,7 @@ if (str_starts_with($path, '/study'))         { require __DIR__ . '/routes/study
 if (str_starts_with($path, '/sessions'))      { require __DIR__ . '/routes/sessions.php';      }
 if (str_starts_with($path, '/feedback'))      { require __DIR__ . '/routes/feedback.php';      }
 if (str_starts_with($path, '/admin'))         { require __DIR__ . '/routes/admin.php';         }
+if (str_starts_with($path, '/notebook'))      { require __DIR__ . '/routes/notebook.php';      }
 if (str_starts_with($path, '/tts'))           { require __DIR__ . '/routes/tts.php';           }
 
 

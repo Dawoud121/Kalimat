@@ -4779,6 +4779,423 @@ input[type="checkbox"] {
   }
 }
 
+/* ===== NOTEBOOK ===== */
+
+.notebook-page {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Left panel ───────────────────────────────────────────────────────── */
+.notebook-panel {
+  width: 260px;
+  min-width: 260px;
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  overflow-y: auto;
+}
+
+.notebook-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 14px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.notebook-panel-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.notebook-empty-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 40px 20px;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.notebook-empty-panel p {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.notebook-class-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+/* ── Class ────────────────────────────────────────────────────────────── */
+.notebook-class-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text);
+  transition: background 0.1s;
+}
+
+.notebook-class-header:hover {
+  background: var(--color-hover);
+}
+
+.notebook-class-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Lesson items ─────────────────────────────────────────────────────── */
+.notebook-lesson-list {
+  padding-bottom: 4px;
+}
+
+.notebook-lesson-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 28px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--color-text);
+  transition: background 0.1s;
+  position: relative;
+}
+
+.notebook-lesson-item:hover {
+  background: var(--color-hover);
+}
+
+.notebook-lesson-item.active {
+  background: var(--color-brand-muted);
+  color: var(--color-brand);
+  font-weight: 600;
+}
+
+.notebook-lesson-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.notebook-lesson-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notebook-lesson-date {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.notebook-lesson-item.active .notebook-lesson-date {
+  color: var(--color-brand);
+  opacity: 0.7;
+}
+
+.notebook-add-lesson-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px 6px 28px;
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+
+.notebook-add-lesson-btn:hover {
+  color: var(--color-brand);
+}
+
+/* ── Context menu ─────────────────────────────────────────────────────── */
+.notebook-menu-anchor {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: var(--radius);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.notebook-menu-anchor:hover {
+  color: var(--color-text);
+  background: var(--color-hover);
+}
+
+.notebook-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 20;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  min-width: 140px;
+  padding: 4px 0;
+}
+
+.notebook-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 14px;
+  border: none;
+  background: none;
+  font-size: 0.82rem;
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.notebook-menu button:hover {
+  background: var(--color-hover);
+}
+
+.notebook-menu button.danger {
+  color: var(--color-danger);
+}
+
+/* ── Inline forms ─────────────────────────────────────────────────────── */
+.notebook-inline-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 14px;
+}
+
+.notebook-inline-form .form-input {
+  padding: 6px 10px;
+  font-size: 0.82rem;
+}
+
+.notebook-inline-form-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/* ── Right panel / main area ──────────────────────────────────────────── */
+.notebook-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.notebook-lesson-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 14px 20px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.notebook-lesson-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.notebook-lesson-header-date {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.notebook-empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+/* ── Canvas area ──────────────────────────────────────────────────────── */
+.notebook-canvas-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.notebook-canvas-wrapper {
+  flex: 1;
+  position: relative;
+  background: #faf9f6;
+  overflow: hidden;
+}
+
+[data-theme="dark"] .notebook-canvas-wrapper {
+  background: #1e1e1e;
+}
+
+.notebook-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.notebook-canvas-active {
+  touch-action: none;
+  cursor: crosshair;
+}
+
+/* ── Toolbar ──────────────────────────────────────────────────────────── */
+.notebook-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  flex-wrap: wrap;
+}
+
+.notebook-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.notebook-toolbar-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--color-border);
+  margin: 0 6px;
+}
+
+.notebook-tool-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.notebook-tool-btn:hover:not(:disabled) {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.notebook-tool-btn.active {
+  background: var(--color-brand-muted);
+  color: var(--color-brand);
+  border-color: var(--color-brand);
+}
+
+.notebook-tool-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.notebook-tool-btn-danger:hover:not(:disabled) {
+  color: var(--color-danger);
+}
+
+/* ── Color swatches ───────────────────────────────────────────────────── */
+.notebook-color-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: var(--swatch-color);
+  cursor: pointer;
+  padding: 0;
+  margin: 0 1px;
+  transition: border-color 0.12s, transform 0.12s;
+}
+
+.notebook-color-swatch:hover {
+  transform: scale(1.15);
+}
+
+.notebook-color-swatch.active {
+  border-color: var(--color-text);
+  transform: scale(1.15);
+}
+
+/* ── Thickness buttons ────────────────────────────────────────────────── */
+.notebook-thickness-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.notebook-thickness-btn:hover {
+  background: var(--color-hover);
+}
+
+.notebook-thickness-btn.active {
+  background: var(--color-brand-muted);
+  border-color: var(--color-brand);
+}
+
+.notebook-thickness-dot {
+  display: block;
+  border-radius: 50%;
+  background: var(--color-text);
+}
+
+/* ── Notebook mobile ──────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .notebook-page {
+    flex-direction: column;
+  }
+  .notebook-panel {
+    width: 100%;
+    min-width: unset;
+    max-height: 45vh;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .notebook-canvas-wrapper {
+    min-height: 400px;
+  }
+}
+
 /* ===== STORIES ===== */
 .story-grid {
   display: grid;

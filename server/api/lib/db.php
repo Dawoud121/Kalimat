@@ -285,6 +285,36 @@ function get_db(array $config): PDO {
             window_start INTEGER DEFAULT 0
         );
 
+        -- Notebook Classes
+        CREATE TABLE IF NOT EXISTS notebook_classes (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            title       TEXT NOT NULL,
+            order_index INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Notebook Lessons
+        CREATE TABLE IF NOT EXISTS notebook_lessons (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            class_id    INTEGER NOT NULL REFERENCES notebook_classes(id) ON DELETE CASCADE,
+            user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            title       TEXT NOT NULL,
+            date        TEXT DEFAULT (date('now')),
+            order_index INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Notebook Strokes (one row per stroke)
+        CREATE TABLE IF NOT EXISTS notebook_strokes (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            lesson_id   INTEGER NOT NULL REFERENCES notebook_lessons(id) ON DELETE CASCADE,
+            user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            stroke_data TEXT NOT NULL,
+            order_index INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT DEFAULT (datetime('now'))
+        );
+
         -- Indexes
         CREATE INDEX IF NOT EXISTS idx_decks_user ON decks(user_id);
         CREATE INDEX IF NOT EXISTS idx_words_user ON words(user_id);
@@ -304,6 +334,10 @@ function get_db(array $config): PDO {
         CREATE INDEX IF NOT EXISTS idx_sentences_word ON sentences(word_id);
         CREATE INDEX IF NOT EXISTS idx_contributions_status ON contributions(status);
         CREATE INDEX IF NOT EXISTS idx_app_sessions_user ON app_sessions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_notebook_classes_user ON notebook_classes(user_id);
+        CREATE INDEX IF NOT EXISTS idx_notebook_lessons_class ON notebook_lessons(class_id);
+        CREATE INDEX IF NOT EXISTS idx_notebook_lessons_user ON notebook_lessons(user_id);
+        CREATE INDEX IF NOT EXISTS idx_notebook_strokes_lesson ON notebook_strokes(lesson_id);
     ");
 
     return $pdo;
