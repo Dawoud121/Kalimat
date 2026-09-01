@@ -946,10 +946,40 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
 
     // Pen / Highlighter
     if (!currentStrokeRef.current) return
+
+    // If already straightened, moving the pen rotates/resizes the line around its origin
+    if (straightenRef.current) {
+      const pos = screenToCanvas(e.clientX, e.clientY)
+      const first = currentStrokeRef.current.points[0]
+      // Snap endpoint to nearby existing stroke endpoints
+      let endPos = { x: pos.x, y: pos.y }
+      const snapDist = SNAP_DISTANCE / viewRef.current.zoom
+      for (const el of elementsRef.current) {
+        if (!el.points || el.points.length < 2) continue
+        const ef = el.points[0], el2 = el.points[el.points.length - 1]
+        if (Math.hypot(pos.x - ef.x, pos.y - ef.y) < snapDist) { endPos = { x: ef.x, y: ef.y }; break }
+        if (Math.hypot(pos.x - el2.x, pos.y - el2.y) < snapDist) { endPos = { x: el2.x, y: el2.y }; break }
+      }
+      currentStrokeRef.current.points = [first, { x: endPos.x, y: endPos.y, pressure: first.pressure }]
+      clearActiveCanvas()
+      const previewCtx = activeCanvasRef.current.getContext('2d')
+      applyViewTransform(previewCtx)
+      previewCtx.save()
+      previewCtx.lineCap = 'round'
+      previewCtx.strokeStyle = currentStrokeRef.current.color
+      previewCtx.lineWidth = currentStrokeRef.current.width
+      previewCtx.globalAlpha = currentStrokeRef.current.tool === 'highlighter' ? HIGHLIGHTER_OPACITY : 1
+      previewCtx.beginPath()
+      previewCtx.moveTo(first.x, first.y)
+      previewCtx.lineTo(endPos.x, endPos.y)
+      previewCtx.stroke()
+      previewCtx.restore()
+      return
+    }
+
     const points = getCoalescedCanvasPoints(e)
     currentStrokeRef.current.points.push(...points)
     lastMoveTimeRef.current = Date.now()
-    straightenRef.current = false
 
     // Start/reset hold timer for line straightening
     if (holdTimerRef.current) clearTimeout(holdTimerRef.current)
@@ -967,7 +997,6 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
         previewCtx.strokeStyle = currentStrokeRef.current.color
         previewCtx.lineWidth = currentStrokeRef.current.width
         previewCtx.globalAlpha = currentStrokeRef.current.tool === 'highlighter' ? HIGHLIGHTER_OPACITY : 1
-        previewCtx.setLineDash([6 / viewRef.current.zoom, 4 / viewRef.current.zoom])
         previewCtx.beginPath()
         previewCtx.moveTo(pts[0].x, pts[0].y)
         previewCtx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y)
@@ -1069,7 +1098,15 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     // Line straightening: if held still for 500ms, replace with straight line
     if (straightenRef.current) {
       const first = stroke.points[0]
-      const last = stroke.points[stroke.points.length - 1]
+      let last = stroke.points[stroke.points.length - 1]
+      // Snap endpoint to nearby existing stroke endpoints
+      const snapDist = SNAP_DISTANCE / viewRef.current.zoom
+      for (const el of elementsRef.current) {
+        if (!el.points || el.points.length < 2) continue
+        const ef = el.points[0], el2 = el.points[el.points.length - 1]
+        if (Math.hypot(last.x - ef.x, last.y - ef.y) < snapDist) { last = { ...last, x: ef.x, y: ef.y }; break }
+        if (Math.hypot(last.x - el2.x, last.y - el2.y) < snapDist) { last = { ...last, x: el2.x, y: el2.y }; break }
+      }
       stroke.points = [first, last]
       straightenRef.current = false
     }
