@@ -1,6 +1,6 @@
-// v2.8.0
-import React from 'react'
-import { Pen, Highlighter, Eraser, Undo2, Redo2, PenTool, Trash2 } from 'lucide-react'
+// v2.9.0
+import React, { useState } from 'react'
+import { Pen, Highlighter, Eraser, Undo2, Redo2, PenTool, Trash2, Lasso, Type, ImagePlus, Spline, Download } from 'lucide-react'
 
 const COLORS = [
   { value: '#000000', label: 'Black' },
@@ -23,11 +23,16 @@ export default function NotebookToolbar({
   color, onColorChange,
   thickness, onThicknessChange,
   pencilOnly, onPencilOnlyToggle,
+  smoothing, onSmoothingToggle,
   canUndo, canRedo, onUndo, onRedo,
   onClear,
+  onExportPNG, onExportPDF,
 }) {
+  const [exportOpen, setExportOpen] = useState(false)
+
   return (
     <div className="notebook-toolbar">
+      {/* Drawing tools */}
       <div className="notebook-toolbar-group">
         <button
           className={`notebook-tool-btn${tool === 'pen' ? ' active' : ''}`}
@@ -52,7 +57,35 @@ export default function NotebookToolbar({
         </button>
       </div>
 
-      {tool !== 'eraser' && (
+      <div className="notebook-toolbar-divider" />
+
+      {/* Selection & insert tools */}
+      <div className="notebook-toolbar-group">
+        <button
+          className={`notebook-tool-btn${tool === 'lasso' ? ' active' : ''}`}
+          onClick={() => onToolChange('lasso')}
+          title="Lasso Select"
+        >
+          <Lasso size={16} />
+        </button>
+        <button
+          className={`notebook-tool-btn${tool === 'text' ? ' active' : ''}`}
+          onClick={() => onToolChange('text')}
+          title="Text"
+        >
+          <Type size={16} />
+        </button>
+        <button
+          className={`notebook-tool-btn${tool === 'image' ? ' active' : ''}`}
+          onClick={() => onToolChange('image')}
+          title="Insert Image"
+        >
+          <ImagePlus size={16} />
+        </button>
+      </div>
+
+      {/* Color & thickness (visible for pen/highlighter/text) */}
+      {tool !== 'eraser' && tool !== 'lasso' && tool !== 'image' && (
         <>
           <div className="notebook-toolbar-divider" />
           <div className="notebook-toolbar-group">
@@ -102,9 +135,33 @@ export default function NotebookToolbar({
         >
           <PenTool size={16} />
         </button>
+        <button
+          className={`notebook-tool-btn${smoothing ? ' active' : ''}`}
+          onClick={onSmoothingToggle}
+          title={smoothing ? 'Smoothing (on)' : 'Smoothing (off)'}
+        >
+          <Spline size={16} />
+        </button>
         <button className="notebook-tool-btn notebook-tool-btn-danger" onClick={onClear} title="Clear all">
           <Trash2 size={16} />
         </button>
+      </div>
+
+      <div className="notebook-toolbar-divider" />
+      <div className="notebook-toolbar-group" style={{ position: 'relative' }}>
+        <button
+          className="notebook-tool-btn"
+          onClick={() => setExportOpen(!exportOpen)}
+          title="Export"
+        >
+          <Download size={16} />
+        </button>
+        {exportOpen && (
+          <div className="notebook-menu" style={{ top: '100%', left: 0 }} onClick={() => setExportOpen(false)}>
+            <button onClick={onExportPNG}>Export as PNG</button>
+            <button onClick={onExportPDF}>Export as PDF</button>
+          </div>
+        )}
       </div>
     </div>
   )

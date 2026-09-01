@@ -301,7 +301,17 @@ function get_db(array $config): PDO {
             user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             title       TEXT NOT NULL,
             date        TEXT DEFAULT (date('now')),
+            template    TEXT DEFAULT 'lined',
             order_index INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Notebook Images
+        CREATE TABLE IF NOT EXISTS notebook_images (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            lesson_id   INTEGER NOT NULL REFERENCES notebook_lessons(id) ON DELETE CASCADE,
+            user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            filename    TEXT NOT NULL,
             created_at  TEXT DEFAULT (datetime('now'))
         );
 
@@ -338,7 +348,11 @@ function get_db(array $config): PDO {
         CREATE INDEX IF NOT EXISTS idx_notebook_lessons_class ON notebook_lessons(class_id);
         CREATE INDEX IF NOT EXISTS idx_notebook_lessons_user ON notebook_lessons(user_id);
         CREATE INDEX IF NOT EXISTS idx_notebook_strokes_lesson ON notebook_strokes(lesson_id);
+        CREATE INDEX IF NOT EXISTS idx_notebook_images_lesson ON notebook_images(lesson_id);
     ");
+
+    // Migration: add template column to existing notebook_lessons tables
+    try { $pdo->exec("ALTER TABLE notebook_lessons ADD COLUMN template TEXT DEFAULT 'lined'"); } catch (Exception $e) {}
 
     return $pdo;
 }

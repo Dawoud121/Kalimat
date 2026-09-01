@@ -4788,7 +4788,24 @@ input[type="checkbox"] {
   overflow: hidden;
 }
 
-/* ── Left panel ───────────────────────────────────────────────────────── */
+/* ── Left panel (collapsible) ─────────────────────────────────────────── */
+.notebook-panel-collapsed {
+  width: 44px;
+  min-width: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 12px;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.notebook-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 29;
+}
+
 .notebook-panel {
   width: 260px;
   min-width: 260px;
@@ -4797,6 +4814,15 @@ input[type="checkbox"] {
   flex-direction: column;
   background: var(--color-surface);
   overflow-y: auto;
+}
+
+.notebook-panel-open {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 30;
+  box-shadow: var(--shadow-lg);
 }
 
 .notebook-panel-header {
@@ -5009,9 +5035,10 @@ input[type="checkbox"] {
 
 .notebook-lesson-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
-  padding: 14px 20px 10px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -5049,12 +5076,13 @@ input[type="checkbox"] {
 .notebook-canvas-wrapper {
   flex: 1;
   position: relative;
-  background: #faf9f6;
+  background: #ebebeb;
   overflow: hidden;
+  outline: none;
 }
 
 [data-theme="dark"] .notebook-canvas-wrapper {
-  background: #1e1e1e;
+  background: #141414;
 }
 
 .notebook-canvas {
@@ -5073,7 +5101,7 @@ input[type="checkbox"] {
 .notebook-zoom-indicator {
   position: absolute;
   bottom: 12px;
-  right: 12px;
+  left: 12px;
   background: var(--color-bg-elevated, rgba(0,0,0,0.6));
   color: var(--color-text, #fff);
   font-size: 12px;
@@ -5082,6 +5110,33 @@ input[type="checkbox"] {
   opacity: 0.7;
   pointer-events: none;
   z-index: 5;
+}
+
+/* ── Selection toolbar ───────────────────────────────────────────────── */
+.notebook-selection-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  white-space: nowrap;
+}
+
+/* ── Minimap ─────────────────────────────────────────────────────────── */
+.notebook-minimap {
+  opacity: 0.8;
+  transition: opacity 0.15s;
+}
+
+.notebook-minimap:hover {
+  opacity: 1;
+}
+
+[data-theme="dark"] .notebook-minimap canvas {
+  filter: invert(0.9) hue-rotate(180deg);
 }
 
 /* ── Toolbar ──────────────────────────────────────────────────────────── */
@@ -5202,15 +5257,22 @@ input[type="checkbox"] {
   .notebook-page {
     flex-direction: column;
   }
-  .notebook-panel {
+  .notebook-panel-collapsed {
+    display: none;
+  }
+  .notebook-panel-open {
     width: 100%;
-    min-width: unset;
-    max-height: 45vh;
+    max-height: 50vh;
+    position: relative;
+    box-shadow: none;
     border-right: none;
     border-bottom: 1px solid var(--color-border);
   }
   .notebook-canvas-wrapper {
     min-height: 400px;
+  }
+  .notebook-minimap {
+    display: none;
   }
 }
 

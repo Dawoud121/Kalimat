@@ -1,20 +1,78 @@
-// v2.8.0
+// v2.9.0
 import React, { useRef, useState, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react'
 import NotebookToolbar from './NotebookToolbar'
+import SelectionToolbar from './SelectionToolbar'
+import NotebookMinimap from './NotebookMinimap'
 import { saveNotebookStrokes } from '../../lib/dataService'
 
 const HIGHLIGHTER_OPACITY = 0.3
-const LINE_SPACING = 32 // px between ruled lines in canvas space
-const PAGE_HEIGHT = 2000 // virtual canvas height in canvas-space px
+const PAGE_WIDTH = 800   // fixed page width in canvas-space px
+const LINE_SPACING = 32
 const LINE_COLOR = '#d0d8e0'
 const LINE_COLOR_DARK = '#2a2f36'
-const MIN_ZOOM = 0.5
-const MAX_ZOOM = 3
+const GRID_COLOR = '#d0d8e0'
+const GRID_COLOR_DARK = '#2a2f36'
+const MIN_ZOOM = 0.3
+const MAX_ZOOM = 5
+const PAGE_PADDING_BOTTOM = 600 // blank space below last element
+const GUTTER_COLOR = '#ebebeb'
+const GUTTER_COLOR_DARK = '#141414'
+const PAGE_BG = '#faf9f6'
+const PAGE_BG_DARK = '#1e1e1e'
+const PAGE_EDGE_COLOR = '#ccc'
+const PAGE_EDGE_COLOR_DARK = '#333'
+
+// ── Ramer-Douglas-Peucker point simplification ──
+function rdpSimplify(points, tolerance) {
+  if (points.length <= 2) return points
+  let maxDist = 0, maxIdx = 0
+  const first = points[0], last = points[points.length - 1]
+  for (let i = 1; i < points.length - 1; i++) {
+    const d = perpDist(points[i], first, last)
+    if (d > maxDist) { maxDist = d; maxIdx = i }
+  }
+  if (maxDist > tolerance) {
+    const left = rdpSimplify(points.slice(0, maxIdx + 1), tolerance)
+    const right = rdpSimplify(points.slice(maxIdx), tolerance)
+    return [...left.slice(0, -1), ...right]
+  }
+  return [first, last]
+}
+
+function perpDist(p, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y
+  const len = Math.sqrt(dx * dx + dy * dy)
+  if (len === 0) return Math.sqrt((p.x - a.x) ** 2 + (p.y - a.y) ** 2)
+  return Math.abs(dy * p.x - dx * p.y + b.x * a.y - b.y * a.x) / len
+}
+
+// ── Point-in-polygon (ray casting) ──
+function pointInPolygon(px, py, polygon) {
+  let inside = false
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x, yi = polygon[i].y
+    const xj = polygon[j].x, yj = polygon[j].y
+    if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
+      inside = !inside
+    }
+  }
+  return inside
+}
+
+// ── Element rendering ──
+function drawElement(ctx, el, imageCache) {
+  if (el.type === 'text') {
+    drawTextElement(ctx, el)
+  } else if (el.type === 'image') {
+    drawImageElement(ctx, el, imageCache)
+  } else {
+    drawStroke(ctx, el)
+  }
+}
 
 function drawStroke(ctx, stroke) {
   const pts = stroke.points
   if (!pts || pts.length === 0) return
-
   ctx.save()
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
@@ -27,23 +85,18 @@ function drawStroke(ctx, stroke) {
     ctx.lineWidth = stroke.width * 3
     ctx.beginPath()
     ctx.moveTo(pts[0].x, pts[0].y)
-    for (let i = 1; i < pts.length; i++) {
-      ctx.lineTo(pts[i].x, pts[i].y)
-    }
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
     ctx.stroke()
   } else {
     for (let i = 1; i < pts.length; i++) {
-      const p0 = pts[i - 1]
-      const p1 = pts[i]
+      const p0 = pts[i - 1], p1 = pts[i]
       const pressure = (p0.pressure + p1.pressure) / 2
       ctx.lineWidth = stroke.width * (0.3 + 0.7 * pressure)
       ctx.beginPath()
       ctx.moveTo(p0.x, p0.y)
       if (i < pts.length - 1) {
         const p2 = pts[i + 1]
-        const mx = (p1.x + p2.x) / 2
-        const my = (p1.y + p2.y) / 2
-        ctx.quadraticCurveTo(p1.x, p1.y, mx, my)
+        ctx.quadraticCurveTo(p1.x, p1.y, (p1.x + p2.x) / 2, (p1.y + p2.y) / 2)
       } else {
         ctx.lineTo(p1.x, p1.y)
       }
@@ -53,93 +106,256 @@ function drawStroke(ctx, stroke) {
   ctx.restore()
 }
 
+function drawTextElement(ctx, el) {
+  ctx.save()
+  ctx.font = `${el.fontSize || 20}px "Noto Naskh Arabic", serif`
+  ctx.fillStyle = el.color || '#000'
+  ctx.textBaseline = 'top'
+  ctx.direction = 'rtl'
+  const lines = (el.text || '').split('\n')
+  const lineH = (el.fontSize || 20) * 1.5
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], el.x + (el.width || 200), el.y + i * lineH)
+  }
+  ctx.restore()
+}
+
+function drawImageElement(ctx, el, imageCache) {
+  if (!el.src) return
+  const img = imageCache?.get(el.src)
+  if (img && img.complete) {
+    ctx.drawImage(img, el.x, el.y, el.width, el.height)
+  } else {
+    // placeholder
+    ctx.save()
+    ctx.fillStyle = '#e0e0e0'
+    ctx.fillRect(el.x, el.y, el.width, el.height)
+    ctx.strokeStyle = '#ccc'
+    ctx.strokeRect(el.x, el.y, el.width, el.height)
+    ctx.restore()
+  }
+}
+
+// ── Hit testing ──
+function hitTestElement(el, x, y, radius) {
+  if (el.type === 'text') {
+    const w = el.width || 200
+    const h = (el.fontSize || 20) * 1.5 * Math.max(1, (el.text || '').split('\n').length)
+    return x >= el.x && x <= el.x + w && y >= el.y && y <= el.y + h
+  }
+  if (el.type === 'image') {
+    return x >= el.x && x <= el.x + el.width && y >= el.y && y <= el.y + el.height
+  }
+  // stroke
+  return hitTestStroke(el, x, y, radius)
+}
+
 function hitTestStroke(stroke, x, y, radius) {
   const pts = stroke.points
   if (!pts) return false
   const r = radius + (stroke.width || 4) / 2
   for (let i = 0; i < pts.length; i++) {
-    const dx = pts[i].x - x
-    const dy = pts[i].y - y
+    const dx = pts[i].x - x, dy = pts[i].y - y
     if (dx * dx + dy * dy < r * r) return true
   }
   return false
 }
 
-const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStrokes }, ref) {
+function getElementBounds(el) {
+  if (el.type === 'text') {
+    const w = el.width || 200
+    const h = (el.fontSize || 20) * 1.5 * Math.max(1, (el.text || '').split('\n').length)
+    return { x: el.x, y: el.y, w, h }
+  }
+  if (el.type === 'image') {
+    return { x: el.x, y: el.y, w: el.width, h: el.height }
+  }
+  // stroke
+  const pts = el.points
+  if (!pts || pts.length === 0) return { x: 0, y: 0, w: 0, h: 0 }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x
+    if (p.y < minY) minY = p.y
+    if (p.x > maxX) maxX = p.x
+    if (p.y > maxY) maxY = p.y
+  }
+  const pad = (el.width || 4) / 2
+  return { x: minX - pad, y: minY - pad, w: maxX - minX + pad * 2, h: maxY - minY + pad * 2 }
+}
+
+function getSelectionBounds(elements, indices) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const idx of indices) {
+    const b = getElementBounds(elements[idx])
+    if (b.x < minX) minX = b.x
+    if (b.y < minY) minY = b.y
+    if (b.x + b.w > maxX) maxX = b.x + b.w
+    if (b.y + b.h > maxY) maxY = b.y + b.h
+  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
+}
+
+// ── Image compression ──
+function compressImage(file, maxDim = 800, quality = 0.7) {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        let w = img.width, h = img.height
+        if (w > maxDim || h > maxDim) {
+          if (w > h) { h = (h / w) * maxDim; w = maxDim }
+          else { w = (w / h) * maxDim; h = maxDim }
+        }
+        canvas.width = w; canvas.height = h
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, w, h)
+        resolve({ dataUrl: canvas.toDataURL('image/jpeg', quality), width: w, height: h })
+      }
+      img.src = reader.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+// ── Main Component ──
+const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStrokes, template = 'lined' }, ref) {
   const staticCanvasRef = useRef(null)
   const activeCanvasRef = useRef(null)
   const linesCanvasRef = useRef(null)
   const wrapperRef = useRef(null)
 
-  const strokesRef = useRef([])
+  const elementsRef = useRef([])  // renamed from strokesRef
   const undoStackRef = useRef([])
   const redoStackRef = useRef([])
   const currentStrokeRef = useRef(null)
   const isDrawingRef = useRef(false)
   const saveTimerRef = useRef(null)
   const isDirtyRef = useRef(false)
+  const imageCacheRef = useRef(new Map())
 
-  // Viewport transform: pan + zoom
+  // Viewport transform
   const viewRef = useRef({ x: 0, y: 0, zoom: 1 })
   const [zoomLevel, setZoomLevel] = useState(1)
 
   // Touch gesture tracking
-  const gestureRef = useRef({ active: false, startDist: 0, startZoom: 1, startX: 0, startY: 0, startViewX: 0, startViewY: 0, pointerId1: null, pointerId2: null, pointers: new Map() })
+  const gestureRef = useRef({ active: false, startDist: 0, startZoom: 1, startX: 0, startY: 0, startViewX: 0, startViewY: 0, pointers: new Map() })
 
   const [tool, setTool] = useState('pen')
   const [color, setColor] = useState('#000000')
   const [thickness, setThickness] = useState(4)
   const [pencilOnly, setPencilOnly] = useState(false)
+  const [smoothing, setSmoothing] = useState(true)
   const [undoCount, setUndoCount] = useState(0)
   const [redoCount, setRedoCount] = useState(0)
-  const [strokeCount, setStrokeCount] = useState(0)
+  const [elementCount, setElementCount] = useState(0)
+
+  // Text editing state
+  const [editingText, setEditingText] = useState(null) // { idx, el, isNew }
+  const textAreaRef = useRef(null)
+
+  // Lasso selection state
+  const [lassoPath, setLassoPath] = useState(null) // array of {x,y} in canvas space while drawing
+  const [selectedIndices, setSelectedIndices] = useState(null) // Set of indices
+  const [selectionBounds, setSelectionBounds] = useState(null) // screen-space bounds
+  const [showSelToolbar, setShowSelToolbar] = useState(false)
+  const selDragRef = useRef(null) // { startX, startY, origPositions }
+
+  // Wrapper dimensions for minimap
+  const [wrapperDims, setWrapperDims] = useState({ w: 0, h: 0 })
 
   useImperativeHandle(ref, () => ({
     save: () => saveNow(),
     isDirty: () => isDirtyRef.current,
+    exportAsPNG,
+    exportAsPDF,
   }))
 
-  // Init strokes from props
+  // ── Get page bottom (dynamic based on content) ──
+  function getPageBottom() {
+    let maxY = 400 // minimum page height
+    for (const el of elementsRef.current) {
+      const b = getElementBounds(el)
+      const bottom = b.y + b.h
+      if (bottom > maxY) maxY = bottom
+    }
+    return maxY + PAGE_PADDING_BOTTOM
+  }
+
+  // ── Init elements from props ──
   useEffect(() => {
     const loaded = (initialStrokes || []).map(s => s.stroke_data || s)
-    strokesRef.current = loaded
+    elementsRef.current = loaded
     undoStackRef.current = []
     redoStackRef.current = []
     viewRef.current = { x: 0, y: 0, zoom: 1 }
     setZoomLevel(1)
-    setStrokeCount(loaded.length)
+    setElementCount(loaded.length)
     setUndoCount(0)
     setRedoCount(0)
+    setSelectedIndices(null)
+    setSelectionBounds(null)
+    setShowSelToolbar(false)
+    setEditingText(null)
     isDirtyRef.current = false
-    redrawAll()
+    // Preload images
+    loaded.forEach(el => { if (el.type === 'image' && el.src) preloadImage(el.src) })
+    requestAnimationFrame(() => redrawAll())
   }, [lessonId, initialStrokes])
 
-  // Setup canvas sizes
+  function preloadImage(src) {
+    if (imageCacheRef.current.has(src)) return
+    const img = new Image()
+    img.onload = () => redrawAll()
+    img.src = src
+    imageCacheRef.current.set(src, img)
+  }
+
+  // ── Canvas sizing ──
   useEffect(() => {
     const wrapper = wrapperRef.current
     if (!wrapper) return
-
     const resize = () => {
       const rect = wrapper.getBoundingClientRect()
       const dpr = window.devicePixelRatio || 1
-      ;[staticCanvasRef, activeCanvasRef, linesCanvasRef].forEach(ref => {
-        const c = ref.current
+      setWrapperDims({ w: rect.width, h: rect.height })
+      ;[staticCanvasRef, activeCanvasRef, linesCanvasRef].forEach(r => {
+        const c = r.current
         if (!c) return
         c.width = rect.width * dpr
         c.height = rect.height * dpr
         c.style.width = rect.width + 'px'
         c.style.height = rect.height + 'px'
       })
+      clampViewport()
       redrawAll()
     }
-
     const observer = new ResizeObserver(resize)
     observer.observe(wrapper)
     resize()
     return () => observer.disconnect()
   }, [lessonId])
 
-  // Wheel zoom/scroll
+  // ── Viewport clamping ──
+  function clampViewport() {
+    const v = viewRef.current
+    const wrapper = wrapperRef.current
+    if (!wrapper) return
+    const w = wrapper.clientWidth
+    const pageW = PAGE_WIDTH * v.zoom
+    // Horizontal: center if page narrower than viewport, else clamp
+    if (pageW <= w) {
+      v.x = (w - pageW) / 2
+    } else {
+      v.x = Math.min(0, Math.max(w - pageW, v.x))
+    }
+    // Vertical: don't scroll above page top
+    v.y = Math.min(0, v.y)
+  }
+
+  // ── Wheel zoom/scroll ──
   useEffect(() => {
     const wrapper = wrapperRef.current
     if (!wrapper) return
@@ -147,62 +363,169 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       e.preventDefault()
       const v = viewRef.current
       if (e.ctrlKey || e.metaKey) {
-        // Pinch-zoom on trackpad
         const rect = wrapper.getBoundingClientRect()
         const mx = e.clientX - rect.left
         const my = e.clientY - rect.top
         const factor = 1 - e.deltaY * 0.005
         const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.zoom * factor))
-        // Zoom toward cursor
         v.x = mx - (mx - v.x) * (newZoom / v.zoom)
         v.y = my - (my - v.y) * (newZoom / v.zoom)
         v.zoom = newZoom
       } else {
-        // Scroll = pan
-        v.x -= e.deltaX
         v.y -= e.deltaY
       }
+      clampViewport()
       setZoomLevel(v.zoom)
       redrawAll()
+      updateSelectionBoundsScreen()
     }
     wrapper.addEventListener('wheel', handleWheel, { passive: false })
     return () => wrapper.removeEventListener('wheel', handleWheel)
   }, [lessonId])
 
+  // ── Dark mode helper ──
   function getIsDark() {
     return document.documentElement.getAttribute('data-theme') === 'dark'
   }
 
-  function drawLines() {
+  // ── Template drawing functions ──
+  function drawPageBackground() {
     const c = linesCanvasRef.current
     if (!c) return
     const ctx = c.getContext('2d')
     const dpr = window.devicePixelRatio || 1
-    const w = c.width / dpr
-    const h = c.height / dpr
+    const w = c.width / dpr, h = c.height / dpr
     const v = viewRef.current
+    const dark = getIsDark()
 
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, c.width, c.height)
     ctx.scale(dpr, dpr)
 
-    ctx.strokeStyle = getIsDark() ? LINE_COLOR_DARK : LINE_COLOR
-    ctx.lineWidth = 0.5
+    // Fill gutter (area outside the page)
+    ctx.fillStyle = dark ? GUTTER_COLOR_DARK : GUTTER_COLOR
+    ctx.fillRect(0, 0, w, h)
 
-    // Draw horizontal ruled lines across the virtual page
+    // Fill page area
+    const pageLeft = v.x
+    const pageRight = v.x + PAGE_WIDTH * v.zoom
+    const pageTop = v.y
+    ctx.fillStyle = dark ? PAGE_BG_DARK : PAGE_BG
+    ctx.fillRect(
+      Math.max(0, pageLeft), Math.max(0, pageTop),
+      Math.min(w, pageRight) - Math.max(0, pageLeft),
+      h - Math.max(0, pageTop)
+    )
+
+    // Page edge lines
+    ctx.strokeStyle = dark ? PAGE_EDGE_COLOR_DARK : PAGE_EDGE_COLOR
+    ctx.lineWidth = 1
+    if (pageLeft >= 0 && pageLeft <= w) {
+      ctx.beginPath(); ctx.moveTo(pageLeft, 0); ctx.lineTo(pageLeft, h); ctx.stroke()
+    }
+    if (pageRight >= 0 && pageRight <= w) {
+      ctx.beginPath(); ctx.moveTo(pageRight, 0); ctx.lineTo(pageRight, h); ctx.stroke()
+    }
+
+    // Draw template pattern
+    const tmpl = template || 'lined'
+    if (tmpl === 'blank') return
+    if (tmpl === 'lined') drawLinedTemplate(ctx, w, h, v, dark)
+    else if (tmpl === 'grid') drawGridTemplate(ctx, w, h, v, dark)
+    else if (tmpl === 'dotted') drawDottedTemplate(ctx, w, h, v, dark)
+    else if (tmpl === 'arabic') drawArabicTemplate(ctx, w, h, v, dark)
+    else drawLinedTemplate(ctx, w, h, v, dark) // fallback
+  }
+
+  function drawLinedTemplate(ctx, w, h, v, dark) {
+    ctx.strokeStyle = dark ? LINE_COLOR_DARK : LINE_COLOR
+    ctx.lineWidth = 0.5
     const startLine = Math.max(0, Math.floor(-v.y / (LINE_SPACING * v.zoom)))
     const endLine = Math.ceil((h - v.y) / (LINE_SPACING * v.zoom))
-
-    for (let i = startLine; i <= endLine && i < PAGE_HEIGHT / LINE_SPACING; i++) {
+    const left = Math.max(0, v.x)
+    const right = Math.min(w, v.x + PAGE_WIDTH * v.zoom)
+    if (left >= right) return
+    for (let i = startLine; i <= endLine; i++) {
       const y = v.y + i * LINE_SPACING * v.zoom
       if (y < 0 || y > h) continue
-      ctx.beginPath()
-      ctx.moveTo(0, y)
-      ctx.lineTo(w, y)
-      ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke()
     }
   }
 
+  function drawGridTemplate(ctx, w, h, v, dark) {
+    ctx.strokeStyle = dark ? GRID_COLOR_DARK : GRID_COLOR
+    ctx.lineWidth = 0.5
+    const left = Math.max(0, v.x)
+    const right = Math.min(w, v.x + PAGE_WIDTH * v.zoom)
+    if (left >= right) return
+    // Horizontal
+    const startH = Math.max(0, Math.floor(-v.y / (LINE_SPACING * v.zoom)))
+    const endH = Math.ceil((h - v.y) / (LINE_SPACING * v.zoom))
+    for (let i = startH; i <= endH; i++) {
+      const y = v.y + i * LINE_SPACING * v.zoom
+      if (y < 0 || y > h) continue
+      ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke()
+    }
+    // Vertical
+    const startV = Math.max(0, Math.floor(-v.x / (LINE_SPACING * v.zoom)))
+    const endV = Math.ceil((right - v.x) / (LINE_SPACING * v.zoom))
+    for (let i = startV; i <= endV && i <= PAGE_WIDTH / LINE_SPACING; i++) {
+      const x = v.x + i * LINE_SPACING * v.zoom
+      if (x < left || x > right) continue
+      ctx.beginPath(); ctx.moveTo(x, Math.max(0, v.y)); ctx.lineTo(x, h); ctx.stroke()
+    }
+  }
+
+  function drawDottedTemplate(ctx, w, h, v, dark) {
+    ctx.fillStyle = dark ? GRID_COLOR_DARK : GRID_COLOR
+    const left = Math.max(0, v.x)
+    const right = Math.min(w, v.x + PAGE_WIDTH * v.zoom)
+    if (left >= right) return
+    const startH = Math.max(0, Math.floor(-v.y / (LINE_SPACING * v.zoom)))
+    const endH = Math.ceil((h - v.y) / (LINE_SPACING * v.zoom))
+    const startV = Math.max(0, Math.floor(-v.x / (LINE_SPACING * v.zoom)))
+    const endV = Math.ceil((right - v.x) / (LINE_SPACING * v.zoom))
+    const dotR = Math.max(0.8, 1 * v.zoom)
+    for (let row = startH; row <= endH; row++) {
+      const y = v.y + row * LINE_SPACING * v.zoom
+      if (y < 0 || y > h) continue
+      for (let col = startV; col <= endV && col <= PAGE_WIDTH / LINE_SPACING; col++) {
+        const x = v.x + col * LINE_SPACING * v.zoom
+        if (x < left || x > right) continue
+        ctx.beginPath(); ctx.arc(x, y, dotR, 0, Math.PI * 2); ctx.fill()
+      }
+    }
+  }
+
+  function drawArabicTemplate(ctx, w, h, v, dark) {
+    const spacing = 48 // wider for Arabic script
+    ctx.lineWidth = 0.5
+    const left = Math.max(0, v.x)
+    const right = Math.min(w, v.x + PAGE_WIDTH * v.zoom)
+    if (left >= right) return
+    const startLine = Math.max(0, Math.floor(-v.y / (spacing * v.zoom)))
+    const endLine = Math.ceil((h - v.y) / (spacing * v.zoom))
+    for (let i = startLine; i <= endLine; i++) {
+      const baseY = v.y + i * spacing * v.zoom
+      // Baseline (solid)
+      ctx.strokeStyle = dark ? '#3a3f46' : '#b0b8c0'
+      ctx.lineWidth = 0.8
+      if (baseY >= 0 && baseY <= h) {
+        ctx.beginPath(); ctx.moveTo(left, baseY); ctx.lineTo(right, baseY); ctx.stroke()
+      }
+      // Midline guide (dashed, lighter)
+      const midY = baseY + spacing * v.zoom * 0.5
+      ctx.strokeStyle = dark ? LINE_COLOR_DARK : LINE_COLOR
+      ctx.lineWidth = 0.3
+      ctx.setLineDash([4, 4])
+      if (midY >= 0 && midY <= h) {
+        ctx.beginPath(); ctx.moveTo(left, midY); ctx.lineTo(right, midY); ctx.stroke()
+      }
+      ctx.setLineDash([])
+    }
+  }
+
+  // ── Canvas transforms ──
   function applyViewTransform(ctx) {
     const dpr = window.devicePixelRatio || 1
     const v = viewRef.current
@@ -219,11 +542,28 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, c.width, c.height)
     applyViewTransform(ctx)
-    strokesRef.current.forEach(s => drawStroke(ctx, s))
+    elementsRef.current.forEach(el => drawElement(ctx, el, imageCacheRef.current))
+    // Draw selection highlight
+    if (selectedIndices && selectedIndices.size > 0) {
+      drawSelectionHighlight(ctx)
+    }
+  }
+
+  function drawSelectionHighlight(ctx) {
+    ctx.save()
+    ctx.setLineDash([6, 4])
+    ctx.strokeStyle = '#1a73e8'
+    ctx.lineWidth = 1.5 / viewRef.current.zoom
+    for (const idx of selectedIndices) {
+      const b = getElementBounds(elementsRef.current[idx])
+      ctx.strokeRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4)
+    }
+    ctx.setLineDash([])
+    ctx.restore()
   }
 
   function redrawAll() {
-    drawLines()
+    drawPageBackground()
     redrawStatic()
     clearActiveCanvas()
   }
@@ -236,6 +576,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     ctx.clearRect(0, 0, c.width, c.height)
   }
 
+  // ── Saving ──
   function scheduleSave() {
     isDirtyRef.current = true
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
@@ -246,12 +587,9 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     if (!isDirtyRef.current || !lessonId) return
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     isDirtyRef.current = false
-    const strokes = strokesRef.current.map((s, i) => ({
-      stroke_data: s,
-      order_index: i,
-    }))
+    const data = elementsRef.current.map((s, i) => ({ stroke_data: s, order_index: i }))
     try {
-      await saveNotebookStrokes(lessonId, strokes)
+      await saveNotebookStrokes(lessonId, data)
     } catch (err) {
       console.error('Notebook save failed:', err)
       isDirtyRef.current = true
@@ -268,20 +606,27 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   }, [lessonId])
 
   function updateCounts() {
-    setStrokeCount(strokesRef.current.length)
+    setElementCount(elementsRef.current.length)
     setUndoCount(undoStackRef.current.length)
     setRedoCount(redoStackRef.current.length)
   }
 
-  // Convert screen coords to canvas-space coords (accounting for pan+zoom)
+  // ── Coordinate conversion ──
   function screenToCanvas(clientX, clientY) {
     const rect = activeCanvasRef.current.getBoundingClientRect()
     const v = viewRef.current
-    const sx = clientX - rect.left
-    const sy = clientY - rect.top
     return {
-      x: (sx - v.x) / v.zoom,
-      y: (sy - v.y) / v.zoom,
+      x: (clientX - rect.left - v.x) / v.zoom,
+      y: (clientY - rect.top - v.y) / v.zoom,
+    }
+  }
+
+  function canvasToScreen(cx, cy) {
+    const rect = wrapperRef.current?.getBoundingClientRect() || { left: 0, top: 0 }
+    const v = viewRef.current
+    return {
+      x: cx * v.zoom + v.x,
+      y: cy * v.zoom + v.y,
     }
   }
 
@@ -299,14 +644,23 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     return [{ ...p, pressure: e.pressure || 0.5 }]
   }
 
-  // ── Touch gesture handling (pan/zoom with fingers) ──
+  // ── Selection bounds in screen space ──
+  function updateSelectionBoundsScreen() {
+    if (!selectedIndices || selectedIndices.size === 0) {
+      setSelectionBounds(null)
+      return
+    }
+    const cb = getSelectionBounds(elementsRef.current, selectedIndices)
+    const tl = canvasToScreen(cb.x, cb.y)
+    const br = canvasToScreen(cb.x + cb.w, cb.y + cb.h)
+    setSelectionBounds({ x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y })
+  }
 
+  // ── Touch gesture handling ──
   function handleTouchPointerDown(e) {
     const g = gestureRef.current
     g.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
-
     if (g.pointers.size === 2) {
-      // Start pinch/pan gesture
       const [p1, p2] = [...g.pointers.values()]
       g.active = true
       g.startDist = Math.hypot(p2.x - p1.x, p2.y - p1.y)
@@ -315,7 +669,6 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       g.startY = (p1.y + p2.y) / 2
       g.startViewX = viewRef.current.x
       g.startViewY = viewRef.current.y
-      // Cancel any in-progress drawing
       if (isDrawingRef.current) {
         isDrawingRef.current = false
         currentStrokeRef.current = null
@@ -327,40 +680,36 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   function handleTouchPointerMove(e) {
     const g = gestureRef.current
     g.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
-
     if (g.active && g.pointers.size >= 2) {
       const [p1, p2] = [...g.pointers.values()]
       const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y)
       const midX = (p1.x + p2.x) / 2
       const midY = (p1.y + p2.y) / 2
-
       const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, g.startZoom * (dist / g.startDist)))
       const v = viewRef.current
       v.zoom = newZoom
       v.x = g.startViewX + (midX - g.startX)
       v.y = g.startViewY + (midY - g.startY)
+      clampViewport()
       setZoomLevel(newZoom)
       redrawAll()
+      updateSelectionBoundsScreen()
     }
   }
 
   function handleTouchPointerUp(e) {
     const g = gestureRef.current
     g.pointers.delete(e.pointerId)
-    if (g.pointers.size < 2) {
-      g.active = false
-    }
+    if (g.pointers.size < 2) g.active = false
   }
 
-  // Single-finger pan (touch only, when not drawing)
   const panRef = useRef({ active: false, startX: 0, startY: 0, startViewX: 0, startViewY: 0 })
 
+  // ── Pointer handlers ──
   const handlePointerDown = useCallback((e) => {
-    // Touch gesture tracking
+    // Touch: pan/zoom
     if (e.pointerType === 'touch') {
       handleTouchPointerDown(e)
-
-      // Single-finger pan
       if (gestureRef.current.pointers.size === 1) {
         const v = viewRef.current
         panRef.current = { active: true, startX: e.clientX, startY: e.clientY, startViewX: v.x, startViewY: v.y }
@@ -371,7 +720,6 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       return
     }
 
-    // Pen/mouse drawing
     if (pencilOnly && e.pointerType !== 'pen' && e.pointerType !== 'mouse') return
     e.preventDefault()
     const canvas = activeCanvasRef.current
@@ -380,10 +728,96 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
 
     const pos = screenToCanvas(e.clientX, e.clientY)
 
+    // ── Text tool ──
+    if (tool === 'text') {
+      // Check if clicking on existing text
+      for (let i = elementsRef.current.length - 1; i >= 0; i--) {
+        const el = elementsRef.current[i]
+        if (el.type === 'text' && hitTestElement(el, pos.x, pos.y, 0)) {
+          setEditingText({ idx: i, el: { ...el }, isNew: false })
+          return
+        }
+      }
+      // Create new text element
+      const newEl = {
+        type: 'text',
+        id: crypto.randomUUID(),
+        x: pos.x,
+        y: pos.y,
+        text: '',
+        fontSize: thickness * 5 + 10, // map thickness to font size: 20/30/45
+        color: color,
+        width: 300,
+      }
+      setEditingText({ idx: -1, el: newEl, isNew: true })
+      return
+    }
+
+    // ── Image tool ──
+    if (tool === 'image') {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = 'image/*'
+      input.onchange = async (evt) => {
+        const file = evt.target.files?.[0]
+        if (!file) return
+        const { dataUrl, width, height } = await compressImage(file)
+        const imgEl = {
+          type: 'image',
+          id: crypto.randomUUID(),
+          x: pos.x,
+          y: pos.y,
+          width: Math.min(width, PAGE_WIDTH * 0.8),
+          height: Math.min(width, PAGE_WIDTH * 0.8) * (height / width),
+          src: dataUrl,
+        }
+        preloadImage(dataUrl)
+        elementsRef.current.push(imgEl)
+        undoStackRef.current.push({ type: 'draw', stroke: imgEl })
+        redoStackRef.current = []
+        redrawAll()
+        scheduleSave()
+        updateCounts()
+      }
+      input.click()
+      return
+    }
+
+    // ── Lasso tool ──
+    if (tool === 'lasso') {
+      // If clicking inside existing selection, start drag
+      if (selectedIndices && selectedIndices.size > 0) {
+        const cb = getSelectionBounds(elementsRef.current, selectedIndices)
+        if (pos.x >= cb.x && pos.x <= cb.x + cb.w && pos.y >= cb.y && pos.y <= cb.y + cb.h) {
+          // Toggle floating toolbar on click, or start drag
+          selDragRef.current = {
+            startX: pos.x,
+            startY: pos.y,
+            moved: false,
+            origPositions: [...selectedIndices].map(idx => {
+              const el = elementsRef.current[idx]
+              if (el.type === 'text' || el.type === 'image') return { idx, x: el.x, y: el.y }
+              return { idx, points: el.points.map(p => ({ ...p })) }
+            }),
+          }
+          isDrawingRef.current = true
+          return
+        }
+      }
+      // Start new lasso
+      setSelectedIndices(null)
+      setSelectionBounds(null)
+      setShowSelToolbar(false)
+      setLassoPath([pos])
+      isDrawingRef.current = true
+      return
+    }
+
+    // ── Eraser ──
     if (tool === 'eraser') {
       const removed = []
-      strokesRef.current = strokesRef.current.filter(s => {
-        if (hitTestStroke(s, pos.x, pos.y, 12 / viewRef.current.zoom)) {
+      elementsRef.current = elementsRef.current.filter(s => {
+        if (hitTestElement(s, pos.x, pos.y, 12 / viewRef.current.zoom)) {
           removed.push(s)
           return false
         }
@@ -400,6 +834,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       return
     }
 
+    // ── Pen / Highlighter ──
     currentStrokeRef.current = {
       tool,
       color,
@@ -408,20 +843,19 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       points: [{ x: pos.x, y: pos.y, pressure: e.pressure || 0.5 }],
     }
     isDrawingRef.current = true
-  }, [tool, color, thickness, pencilOnly])
+  }, [tool, color, thickness, pencilOnly, selectedIndices])
 
   const handlePointerMove = useCallback((e) => {
-    // Touch gesture
     if (e.pointerType === 'touch') {
       handleTouchPointerMove(e)
-
-      // Single-finger pan
       if (panRef.current.active && gestureRef.current.pointers.size === 1 && !gestureRef.current.active) {
         e.preventDefault()
         const v = viewRef.current
         v.x = panRef.current.startViewX + (e.clientX - panRef.current.startX)
         v.y = panRef.current.startViewY + (e.clientY - panRef.current.startY)
+        clampViewport()
         redrawAll()
+        updateSelectionBoundsScreen()
         return
       }
       return
@@ -430,11 +864,52 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     if (!isDrawingRef.current) return
     e.preventDefault()
 
+    const pos = screenToCanvas(e.clientX, e.clientY)
+
+    // Lasso drag
+    if (tool === 'lasso' && selDragRef.current) {
+      const dx = pos.x - selDragRef.current.startX
+      const dy = pos.y - selDragRef.current.startY
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) selDragRef.current.moved = true
+      for (const orig of selDragRef.current.origPositions) {
+        const el = elementsRef.current[orig.idx]
+        if (el.type === 'text' || el.type === 'image') {
+          el.x = orig.x + dx
+          el.y = orig.y + dy
+        } else if (orig.points) {
+          el.points = orig.points.map(p => ({ x: p.x + dx, y: p.y + dy, pressure: p.pressure }))
+        }
+      }
+      redrawAll()
+      updateSelectionBoundsScreen()
+      return
+    }
+
+    // Lasso path drawing
+    if (tool === 'lasso' && lassoPath) {
+      setLassoPath(prev => [...prev, pos])
+      // Draw lasso on active canvas
+      clearActiveCanvas()
+      const ctx = activeCanvasRef.current.getContext('2d')
+      applyViewTransform(ctx)
+      ctx.save()
+      ctx.setLineDash([4 / viewRef.current.zoom, 4 / viewRef.current.zoom])
+      ctx.strokeStyle = '#1a73e8'
+      ctx.lineWidth = 1.5 / viewRef.current.zoom
+      ctx.beginPath()
+      ctx.moveTo(lassoPath[0].x, lassoPath[0].y)
+      for (const p of lassoPath) ctx.lineTo(p.x, p.y)
+      ctx.lineTo(pos.x, pos.y)
+      ctx.stroke()
+      ctx.restore()
+      return
+    }
+
+    // Eraser
     if (tool === 'eraser') {
-      const pos = screenToCanvas(e.clientX, e.clientY)
       const removed = []
-      strokesRef.current = strokesRef.current.filter(s => {
-        if (hitTestStroke(s, pos.x, pos.y, 12 / viewRef.current.zoom)) {
+      elementsRef.current = elementsRef.current.filter(s => {
+        if (hitTestElement(s, pos.x, pos.y, 12 / viewRef.current.zoom)) {
           removed.push(s)
           return false
         }
@@ -450,16 +925,15 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       return
     }
 
+    // Pen / Highlighter
     if (!currentStrokeRef.current) return
-
     const points = getCoalescedCanvasPoints(e)
     currentStrokeRef.current.points.push(...points)
-
     clearActiveCanvas()
     const ctx = activeCanvasRef.current.getContext('2d')
     applyViewTransform(ctx)
     drawStroke(ctx, currentStrokeRef.current)
-  }, [tool])
+  }, [tool, lassoPath])
 
   const handlePointerUp = useCallback((e) => {
     if (e.pointerType === 'touch') {
@@ -471,6 +945,63 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     if (!isDrawingRef.current) return
     isDrawingRef.current = false
 
+    // Lasso drag release
+    if (tool === 'lasso' && selDragRef.current) {
+      if (selDragRef.current.moved) {
+        undoStackRef.current.push({
+          type: 'transform',
+          indices: [...selectedIndices],
+          before: selDragRef.current.origPositions,
+          after: [...selectedIndices].map(idx => {
+            const el = elementsRef.current[idx]
+            if (el.type === 'text' || el.type === 'image') return { idx, x: el.x, y: el.y }
+            return { idx, points: el.points.map(p => ({ ...p })) }
+          }),
+        })
+        redoStackRef.current = []
+        scheduleSave()
+        updateCounts()
+      } else {
+        // Click without move: toggle toolbar
+        setShowSelToolbar(prev => !prev)
+      }
+      selDragRef.current = null
+      return
+    }
+
+    // Lasso path complete
+    if (tool === 'lasso' && lassoPath && lassoPath.length > 2) {
+      const polygon = lassoPath
+      const hits = new Set()
+      elementsRef.current.forEach((el, idx) => {
+        if (!el.type || el.type === 'stroke') {
+          // Check if any stroke point is inside the polygon
+          if (el.points?.some(p => pointInPolygon(p.x, p.y, polygon))) hits.add(idx)
+        } else {
+          // For text/image, check center point
+          const b = getElementBounds(el)
+          if (pointInPolygon(b.x + b.w / 2, b.y + b.h / 2, polygon)) hits.add(idx)
+        }
+      })
+      setLassoPath(null)
+      clearActiveCanvas()
+      if (hits.size > 0) {
+        setSelectedIndices(hits)
+        const cb = getSelectionBounds(elementsRef.current, hits)
+        const tl = canvasToScreen(cb.x, cb.y)
+        const br = canvasToScreen(cb.x + cb.w, cb.y + cb.h)
+        setSelectionBounds({ x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y })
+        setShowSelToolbar(false)
+      } else {
+        setSelectedIndices(null)
+        setSelectionBounds(null)
+      }
+      redrawAll()
+      return
+    }
+    setLassoPath(null)
+
+    // Eraser
     if (tool === 'eraser' || !currentStrokeRef.current) return
 
     const stroke = currentStrokeRef.current
@@ -481,13 +1012,19 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       return
     }
 
+    // Round points
     stroke.points = stroke.points.map(p => ({
       x: Math.round(p.x * 10) / 10,
       y: Math.round(p.y * 10) / 10,
       pressure: Math.round(p.pressure * 100) / 100,
     }))
 
-    strokesRef.current.push(stroke)
+    // Stroke smoothing (RDP)
+    if (smoothing && stroke.points.length > 3) {
+      stroke.points = rdpSimplify(stroke.points, 1.0)
+    }
+
+    elementsRef.current.push(stroke)
     undoStackRef.current.push({ type: 'draw', stroke })
     redoStackRef.current = []
 
@@ -498,24 +1035,59 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
 
     scheduleSave()
     updateCounts()
-  }, [tool])
+  }, [tool, smoothing, lassoPath, selectedIndices])
 
+  // ── Undo / Redo ──
   const handleUndo = useCallback(() => {
     const action = undoStackRef.current.pop()
     if (!action) return
 
     if (action.type === 'draw') {
-      const idx = strokesRef.current.lastIndexOf(action.stroke)
-      if (idx !== -1) strokesRef.current.splice(idx, 1)
+      const idx = elementsRef.current.lastIndexOf(action.stroke)
+      if (idx !== -1) elementsRef.current.splice(idx, 1)
       redoStackRef.current.push(action)
     } else if (action.type === 'erase') {
-      strokesRef.current.push(...action.strokes)
+      elementsRef.current.push(...action.strokes)
       redoStackRef.current.push(action)
     } else if (action.type === 'clear') {
-      strokesRef.current = action.strokes
+      elementsRef.current = action.strokes
+      redoStackRef.current.push(action)
+    } else if (action.type === 'transform') {
+      for (const orig of action.before) {
+        const el = elementsRef.current[orig.idx]
+        if (!el) continue
+        if (el.type === 'text' || el.type === 'image') { el.x = orig.x; el.y = orig.y }
+        else if (orig.points) el.points = orig.points.map(p => ({ ...p }))
+      }
+      redoStackRef.current.push(action)
+    } else if (action.type === 'deleteSelected') {
+      // Re-insert deleted elements at their original indices
+      for (const { idx, el } of action.items.sort((a, b) => a.idx - b.idx)) {
+        elementsRef.current.splice(idx, 0, el)
+      }
+      redoStackRef.current.push(action)
+    } else if (action.type === 'addText' || action.type === 'editText') {
+      if (action.type === 'addText') {
+        const idx = elementsRef.current.findIndex(el => el.id === action.el.id)
+        if (idx !== -1) elementsRef.current.splice(idx, 1)
+      } else {
+        const idx = elementsRef.current.findIndex(el => el.id === action.el.id)
+        if (idx !== -1) elementsRef.current[idx] = { ...action.before }
+      }
+      redoStackRef.current.push(action)
+    } else if (action.type === 'colorChange' || action.type === 'thicknessChange') {
+      for (const { idx, before } of action.changes) {
+        const el = elementsRef.current[idx]
+        if (!el) continue
+        if (action.type === 'colorChange') el.color = before
+        else el.width = before
+      }
       redoStackRef.current.push(action)
     }
 
+    setSelectedIndices(null)
+    setSelectionBounds(null)
+    setShowSelToolbar(false)
     redrawAll()
     scheduleSave()
     updateCounts()
@@ -526,13 +1098,40 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     if (!action) return
 
     if (action.type === 'draw') {
-      strokesRef.current.push(action.stroke)
+      elementsRef.current.push(action.stroke)
       undoStackRef.current.push(action)
     } else if (action.type === 'erase') {
-      strokesRef.current = strokesRef.current.filter(s => !action.strokes.includes(s))
+      elementsRef.current = elementsRef.current.filter(s => !action.strokes.includes(s))
       undoStackRef.current.push(action)
     } else if (action.type === 'clear') {
-      strokesRef.current = []
+      elementsRef.current = []
+      undoStackRef.current.push(action)
+    } else if (action.type === 'transform') {
+      for (const snap of action.after) {
+        const el = elementsRef.current[snap.idx]
+        if (!el) continue
+        if (el.type === 'text' || el.type === 'image') { el.x = snap.x; el.y = snap.y }
+        else if (snap.points) el.points = snap.points.map(p => ({ ...p }))
+      }
+      undoStackRef.current.push(action)
+    } else if (action.type === 'deleteSelected') {
+      const ids = action.items.map(i => i.el.id || i.idx)
+      elementsRef.current = elementsRef.current.filter((el, idx) => !action.items.some(i => i.idx === idx || (el.id && el.id === i.el.id)))
+      undoStackRef.current.push(action)
+    } else if (action.type === 'addText') {
+      elementsRef.current.push(action.el)
+      undoStackRef.current.push(action)
+    } else if (action.type === 'editText') {
+      const idx = elementsRef.current.findIndex(el => el.id === action.el.id)
+      if (idx !== -1) elementsRef.current[idx] = { ...action.after }
+      undoStackRef.current.push(action)
+    } else if (action.type === 'colorChange' || action.type === 'thicknessChange') {
+      for (const { idx, after } of action.changes) {
+        const el = elementsRef.current[idx]
+        if (!el) continue
+        if (action.type === 'colorChange') el.color = after
+        else el.width = after
+      }
       undoStackRef.current.push(action)
     }
 
@@ -542,15 +1141,361 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   }, [])
 
   const handleClear = useCallback(() => {
-    if (strokesRef.current.length === 0) return
-    if (!confirm('Clear all strokes?')) return
-    undoStackRef.current.push({ type: 'clear', strokes: [...strokesRef.current] })
+    if (elementsRef.current.length === 0) return
+    if (!confirm('Clear all?')) return
+    undoStackRef.current.push({ type: 'clear', strokes: [...elementsRef.current] })
     redoStackRef.current = []
-    strokesRef.current = []
+    elementsRef.current = []
+    setSelectedIndices(null)
+    setSelectionBounds(null)
+    setShowSelToolbar(false)
     redrawAll()
     scheduleSave()
     updateCounts()
   }, [])
+
+  // ── Selection actions (from floating toolbar) ──
+  function handleSelChangeColor(newColor) {
+    if (!selectedIndices) return
+    const changes = []
+    for (const idx of selectedIndices) {
+      const el = elementsRef.current[idx]
+      changes.push({ idx, before: el.color, after: newColor })
+      el.color = newColor
+    }
+    undoStackRef.current.push({ type: 'colorChange', changes })
+    redoStackRef.current = []
+    redrawAll()
+    scheduleSave()
+    updateCounts()
+  }
+
+  function handleSelChangeThickness(newThickness) {
+    if (!selectedIndices) return
+    const changes = []
+    for (const idx of selectedIndices) {
+      const el = elementsRef.current[idx]
+      if (el.type === 'text' || el.type === 'image') continue
+      changes.push({ idx, before: el.width, after: newThickness })
+      el.width = newThickness
+    }
+    if (changes.length === 0) return
+    undoStackRef.current.push({ type: 'thicknessChange', changes })
+    redoStackRef.current = []
+    redrawAll()
+    scheduleSave()
+    updateCounts()
+  }
+
+  function handleSelDelete() {
+    if (!selectedIndices) return
+    const items = [...selectedIndices].sort((a, b) => b - a).map(idx => ({ idx, el: elementsRef.current[idx] }))
+    for (const { idx } of items) elementsRef.current.splice(idx, 1)
+    undoStackRef.current.push({ type: 'deleteSelected', items: items.reverse() })
+    redoStackRef.current = []
+    setSelectedIndices(null)
+    setSelectionBounds(null)
+    setShowSelToolbar(false)
+    redrawAll()
+    scheduleSave()
+    updateCounts()
+  }
+
+  function handleSelDuplicate() {
+    if (!selectedIndices) return
+    const newEls = []
+    for (const idx of selectedIndices) {
+      const el = elementsRef.current[idx]
+      const clone = JSON.parse(JSON.stringify(el))
+      if (clone.id) clone.id = crypto.randomUUID()
+      // Offset the duplicate
+      if (clone.type === 'text' || clone.type === 'image') {
+        clone.x += 20; clone.y += 20
+      } else if (clone.points) {
+        clone.points = clone.points.map(p => ({ ...p, x: p.x + 20, y: p.y + 20 }))
+      }
+      newEls.push(clone)
+    }
+    elementsRef.current.push(...newEls)
+    for (const el of newEls) {
+      undoStackRef.current.push({ type: 'draw', stroke: el })
+    }
+    redoStackRef.current = []
+    setSelectedIndices(null)
+    setSelectionBounds(null)
+    setShowSelToolbar(false)
+    redrawAll()
+    scheduleSave()
+    updateCounts()
+  }
+
+  function handleSelFlipH() {
+    if (!selectedIndices) return
+    const cb = getSelectionBounds(elementsRef.current, selectedIndices)
+    const centerX = cb.x + cb.w / 2
+    const before = [...selectedIndices].map(idx => {
+      const el = elementsRef.current[idx]
+      if (el.type === 'text' || el.type === 'image') return { idx, x: el.x, y: el.y }
+      return { idx, points: el.points.map(p => ({ ...p })) }
+    })
+    for (const idx of selectedIndices) {
+      const el = elementsRef.current[idx]
+      if (el.type === 'text' || el.type === 'image') {
+        el.x = 2 * centerX - el.x - (el.width || 0)
+      } else if (el.points) {
+        el.points = el.points.map(p => ({ ...p, x: 2 * centerX - p.x }))
+      }
+    }
+    const after = [...selectedIndices].map(idx => {
+      const el = elementsRef.current[idx]
+      if (el.type === 'text' || el.type === 'image') return { idx, x: el.x, y: el.y }
+      return { idx, points: el.points.map(p => ({ ...p })) }
+    })
+    undoStackRef.current.push({ type: 'transform', indices: [...selectedIndices], before, after })
+    redoStackRef.current = []
+    redrawAll()
+    updateSelectionBoundsScreen()
+    scheduleSave()
+    updateCounts()
+  }
+
+  function handleSelFlipV() {
+    if (!selectedIndices) return
+    const cb = getSelectionBounds(elementsRef.current, selectedIndices)
+    const centerY = cb.y + cb.h / 2
+    const before = [...selectedIndices].map(idx => {
+      const el = elementsRef.current[idx]
+      if (el.type === 'text' || el.type === 'image') return { idx, x: el.x, y: el.y }
+      return { idx, points: el.points.map(p => ({ ...p })) }
+    })
+    for (const idx of selectedIndices) {
+      const el = elementsRef.current[idx]
+      if (el.type === 'text' || el.type === 'image') {
+        el.y = 2 * centerY - el.y - (getElementBounds(el).h || 0)
+      } else if (el.points) {
+        el.points = el.points.map(p => ({ ...p, y: 2 * centerY - p.y }))
+      }
+    }
+    const after = [...selectedIndices].map(idx => {
+      const el = elementsRef.current[idx]
+      if (el.type === 'text' || el.type === 'image') return { idx, x: el.x, y: el.y }
+      return { idx, points: el.points.map(p => ({ ...p })) }
+    })
+    undoStackRef.current.push({ type: 'transform', indices: [...selectedIndices], before, after })
+    redoStackRef.current = []
+    redrawAll()
+    updateSelectionBoundsScreen()
+    scheduleSave()
+    updateCounts()
+  }
+
+  // ── Text editing ──
+  function commitText() {
+    if (!editingText) return
+    const text = textAreaRef.current?.value || ''
+    if (!text.trim()) {
+      setEditingText(null)
+      return
+    }
+    if (editingText.isNew) {
+      const el = { ...editingText.el, text }
+      elementsRef.current.push(el)
+      undoStackRef.current.push({ type: 'addText', el })
+      redoStackRef.current = []
+    } else {
+      const before = { ...editingText.el }
+      elementsRef.current[editingText.idx] = { ...editingText.el, text }
+      undoStackRef.current.push({ type: 'editText', el: editingText.el, before, after: { ...editingText.el, text } })
+      redoStackRef.current = []
+    }
+    setEditingText(null)
+    redrawAll()
+    scheduleSave()
+    updateCounts()
+  }
+
+  // ── Paste handler (for images) ──
+  useEffect(() => {
+    const wrapper = wrapperRef.current
+    if (!wrapper) return
+    const handlePaste = async (e) => {
+      const items = e.clipboardData?.items
+      if (!items) return
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault()
+          const file = item.getAsFile()
+          if (!file) continue
+          const { dataUrl, width, height } = await compressImage(file)
+          const v = viewRef.current
+          const cx = (-v.x + (wrapper.clientWidth / 2)) / v.zoom
+          const cy = (-v.y + (wrapper.clientHeight / 2)) / v.zoom
+          const imgW = Math.min(width, PAGE_WIDTH * 0.8)
+          const imgH = imgW * (height / width)
+          const imgEl = {
+            type: 'image',
+            id: crypto.randomUUID(),
+            x: cx - imgW / 2,
+            y: cy - imgH / 2,
+            width: imgW,
+            height: imgH,
+            src: dataUrl,
+          }
+          preloadImage(dataUrl)
+          elementsRef.current.push(imgEl)
+          undoStackRef.current.push({ type: 'draw', stroke: imgEl })
+          redoStackRef.current = []
+          redrawAll()
+          scheduleSave()
+          updateCounts()
+          break
+        }
+      }
+    }
+    wrapper.addEventListener('paste', handlePaste)
+    // Make wrapper focusable for paste
+    if (!wrapper.getAttribute('tabindex')) wrapper.setAttribute('tabindex', '-1')
+    return () => wrapper.removeEventListener('paste', handlePaste)
+  }, [lessonId])
+
+  // ── Export ──
+  function exportAsPNG() {
+    const pageBottom = getPageBottom()
+    const offscreen = document.createElement('canvas')
+    offscreen.width = PAGE_WIDTH * 2
+    offscreen.height = pageBottom * 2
+    const ctx = offscreen.getContext('2d')
+    ctx.scale(2, 2)
+    // Fill page background
+    ctx.fillStyle = getIsDark() ? PAGE_BG_DARK : PAGE_BG
+    ctx.fillRect(0, 0, PAGE_WIDTH, pageBottom)
+    // Draw template
+    drawTemplateOnExport(ctx, PAGE_WIDTH, pageBottom)
+    // Draw all elements
+    elementsRef.current.forEach(el => drawElement(ctx, el, imageCacheRef.current))
+    // Download
+    const link = document.createElement('a')
+    link.download = `notebook-${lessonId}.png`
+    link.href = offscreen.toDataURL('image/png')
+    link.click()
+  }
+
+  async function exportAsPDF() {
+    try {
+      const jsPDFModule = await import('jspdf')
+      const jsPDF = jsPDFModule.default || jsPDFModule.jsPDF
+      const pageBottom = getPageBottom()
+      const pdfPageH = PAGE_WIDTH * 1.414 // A4 ratio
+      const pageCount = Math.ceil(pageBottom / pdfPageH)
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [PAGE_WIDTH, pdfPageH] })
+
+      for (let p = 0; p < pageCount; p++) {
+        if (p > 0) pdf.addPage()
+        const offscreen = document.createElement('canvas')
+        offscreen.width = PAGE_WIDTH * 2
+        offscreen.height = pdfPageH * 2
+        const ctx = offscreen.getContext('2d')
+        ctx.scale(2, 2)
+        ctx.fillStyle = getIsDark() ? PAGE_BG_DARK : PAGE_BG
+        ctx.fillRect(0, 0, PAGE_WIDTH, pdfPageH)
+        ctx.save()
+        ctx.translate(0, -p * pdfPageH)
+        drawTemplateOnExport(ctx, PAGE_WIDTH, pageBottom)
+        elementsRef.current.forEach(el => drawElement(ctx, el, imageCacheRef.current))
+        ctx.restore()
+        const imgData = offscreen.toDataURL('image/jpeg', 0.92)
+        pdf.addImage(imgData, 'JPEG', 0, 0, PAGE_WIDTH, pdfPageH)
+      }
+
+      pdf.save(`notebook-${lessonId}.pdf`)
+    } catch {
+      alert('PDF export requires jspdf. Install it with: npm install jspdf')
+    }
+  }
+
+  function drawTemplateOnExport(ctx, w, h) {
+    const tmpl = template || 'lined'
+    if (tmpl === 'blank') return
+    ctx.strokeStyle = getIsDark() ? LINE_COLOR_DARK : LINE_COLOR
+    ctx.lineWidth = 0.5
+    if (tmpl === 'lined') {
+      for (let y = LINE_SPACING; y < h; y += LINE_SPACING) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
+      }
+    } else if (tmpl === 'grid') {
+      for (let y = LINE_SPACING; y < h; y += LINE_SPACING) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
+      }
+      for (let x = LINE_SPACING; x < w; x += LINE_SPACING) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke()
+      }
+    } else if (tmpl === 'dotted') {
+      ctx.fillStyle = getIsDark() ? GRID_COLOR_DARK : GRID_COLOR
+      for (let y = LINE_SPACING; y < h; y += LINE_SPACING) {
+        for (let x = LINE_SPACING; x < w; x += LINE_SPACING) {
+          ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill()
+        }
+      }
+    } else if (tmpl === 'arabic') {
+      const spacing = 48
+      for (let y = spacing; y < h; y += spacing) {
+        ctx.strokeStyle = getIsDark() ? '#3a3f46' : '#b0b8c0'
+        ctx.lineWidth = 0.8
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
+        const midY = y + spacing * 0.5
+        ctx.strokeStyle = getIsDark() ? LINE_COLOR_DARK : LINE_COLOR
+        ctx.lineWidth = 0.3
+        ctx.setLineDash([4, 4])
+        ctx.beginPath(); ctx.moveTo(0, midY); ctx.lineTo(w, midY); ctx.stroke()
+        ctx.setLineDash([])
+      }
+    }
+  }
+
+  // ── Minimap navigation ──
+  function handleMinimapNavigate({ x, y }) {
+    const v = viewRef.current
+    v.x = x
+    v.y = y
+    clampViewport()
+    setZoomLevel(v.zoom)
+    redrawAll()
+    updateSelectionBoundsScreen()
+  }
+
+  // ── Tool change clears selection ──
+  useEffect(() => {
+    if (tool !== 'lasso') {
+      setSelectedIndices(null)
+      setSelectionBounds(null)
+      setShowSelToolbar(false)
+    }
+  }, [tool])
+
+  // ── Text overlay position ──
+  const textOverlayStyle = editingText ? (() => {
+    const v = viewRef.current
+    const sx = editingText.el.x * v.zoom + v.x
+    const sy = editingText.el.y * v.zoom + v.y
+    return {
+      position: 'absolute',
+      left: sx,
+      top: sy,
+      fontSize: (editingText.el.fontSize || 20) * v.zoom,
+      color: editingText.el.color || '#000',
+      fontFamily: '"Noto Naskh Arabic", serif',
+      direction: 'rtl',
+      background: 'transparent',
+      border: '1px dashed #1a73e8',
+      outline: 'none',
+      padding: 4,
+      minWidth: 100 * v.zoom,
+      minHeight: (editingText.el.fontSize || 20) * v.zoom * 1.5,
+      zIndex: 100,
+      resize: 'both',
+      lineHeight: 1.5,
+    }
+  })() : null
 
   return (
     <div className="notebook-canvas-area">
@@ -559,11 +1504,14 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
         color={color} onColorChange={setColor}
         thickness={thickness} onThicknessChange={setThickness}
         pencilOnly={pencilOnly} onPencilOnlyToggle={() => setPencilOnly(p => !p)}
+        smoothing={smoothing} onSmoothingToggle={() => setSmoothing(s => !s)}
         canUndo={undoCount > 0} canRedo={redoCount > 0}
         onUndo={handleUndo} onRedo={handleRedo}
         onClear={handleClear}
+        onExportPNG={exportAsPNG}
+        onExportPDF={exportAsPDF}
       />
-      <div ref={wrapperRef} className="notebook-canvas-wrapper">
+      <div ref={wrapperRef} className="notebook-canvas-wrapper" tabIndex={-1}>
         <canvas ref={linesCanvasRef} className="notebook-canvas" />
         <canvas ref={staticCanvasRef} className="notebook-canvas" />
         <canvas
@@ -573,6 +1521,40 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
+        />
+        {/* Text editing overlay */}
+        {editingText && (
+          <textarea
+            ref={textAreaRef}
+            style={textOverlayStyle}
+            defaultValue={editingText.el.text || ''}
+            autoFocus
+            onBlur={commitText}
+            onKeyDown={e => { if (e.key === 'Escape') { setEditingText(null) } }}
+          />
+        )}
+        {/* Selection floating toolbar */}
+        {showSelToolbar && selectionBounds && (
+          <SelectionToolbar
+            bounds={selectionBounds}
+            onChangeColor={handleSelChangeColor}
+            onChangeThickness={handleSelChangeThickness}
+            onDelete={handleSelDelete}
+            onDuplicate={handleSelDuplicate}
+            onFlipH={handleSelFlipH}
+            onFlipV={handleSelFlipV}
+            onClose={() => { setSelectedIndices(null); setSelectionBounds(null); setShowSelToolbar(false) }}
+          />
+        )}
+        {/* Minimap */}
+        <NotebookMinimap
+          elements={elementsRef.current}
+          viewRef={viewRef}
+          pageWidth={PAGE_WIDTH}
+          pageBottom={getPageBottom()}
+          wrapperWidth={wrapperDims.w}
+          wrapperHeight={wrapperDims.h}
+          onNavigate={handleMinimapNavigate}
         />
       </div>
       {zoomLevel !== 1 && (

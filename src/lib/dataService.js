@@ -7,7 +7,9 @@ export const TRUST_APPROVE_DELTA         = 2    // +2 on approval
 export const TRUST_REJECT_DELTA          = 1    // -1 on rejection
 export const COMMUNITY_VERIFIED_THRESHOLD = 5   // weighted score to reach community_verified
 
-import { api } from './api'
+import { api, getToken } from './api'
+
+const API_BASE = import.meta.env.VITE_API_URL || '/api'
 import {
   getOfflineWords, getOfflineDecks, getOfflineSrsCards,
   updateSrsCardLocally, queueSrsCardUpdate,
@@ -900,4 +902,34 @@ export async function getNotebookStrokes(lessonId) {
 
 export async function saveNotebookStrokes(lessonId, strokes) {
   return await api.put(`/notebook/lessons/${lessonId}/strokes`, { strokes })
+}
+
+export async function updateLessonTemplate(lessonId, template) {
+  return api.put(`/notebook/lessons/${lessonId}`, { template })
+}
+
+export async function uploadNotebookImage(lessonId, file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('lesson_id', lessonId)
+  const token = getToken()
+  const res = await fetch(`${API_BASE}/notebook/images`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  })
+  if (!res.ok) throw new Error('Upload failed')
+  return res.json()
+}
+
+export async function getNotebookImages(lessonId) {
+  return api.get(`/notebook/images/${lessonId}`)
+}
+
+export async function deleteNotebookImage(imageId) {
+  return api.del(`/notebook/images/${imageId}`)
+}
+
+export async function recognizeHandwriting(imageBase64) {
+  return api.post('/notebook/recognize', { image: imageBase64 })
 }

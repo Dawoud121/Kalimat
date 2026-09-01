@@ -131,6 +131,7 @@ if ($method === 'PUT' && preg_match('#^/notebook/lessons/(\d+)$#', $path, $m)) {
     $params = [];
     if (isset($body['title'])) { $fields[] = 'title = ?'; $params[] = trim($body['title']); }
     if (isset($body['date'])) { $fields[] = 'date = ?'; $params[] = $body['date']; }
+    if (isset($body['template'])) { $fields[] = 'template = ?'; $params[] = $body['template']; }
     if (isset($body['order_index'])) { $fields[] = 'order_index = ?'; $params[] = (int)$body['order_index']; }
     if (empty($fields)) json_response(['error' => 'No fields to update'], 400);
 
@@ -216,4 +217,132 @@ if ($method === 'PUT' && preg_match('#^/notebook/lessons/(\d+)/strokes$#', $path
     }
 
     json_response(['ok' => true, 'count' => count($strokes)]);
+}
+
+// ── Images ─────────────────────────────────────────────────────────────
+
+// POST /notebook/images
+if ($method === 'POST' && $path === '/notebook/images') {
+    $payload = require_auth($config);
+    $lessonId = (int)($_POST['lesson_id'] ?? 0);
+    if (!$lessonId) json_response(['error' => 'lesson_id is required'], 400);
+
+    // Ownership check
+    $stmt = $pdo->prepare('SELECT id FROM notebook_lessons WHERE id = ? AND user_id = ?');
+    $stmt->execute([$lessonId, $payload['sub']]);
+    if (!$stmt->fetch()) json_response(['error' => 'Not found'], 404);
+
+    if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+        json_response(['error' => 'File upload failed'], 400);
+    }
+
+    $imageDir = $config['data_dir'] . '/notebook-images';
+    if (!is_dir($imageDir)) mkdir($imageDir, 0755, true);
+
+    $filename = uniqid() . '_' . basename($_FILES['file']['name']);
+    $destPath = $imageDir . '/' . $filename;
+
+    if (!move_uploaded_file($_FILES['file']['tmp_name'], $destPath)) {
+        json_response(['error' => 'Failed to save file'], 500);
+    }
+
+    $stmt = $pdo->prepare('INSERT INTO notebook_images (lesson_id, user_id, filename) VALUES (?, ?, ?)');
+    $stmt->execute([$lessonId, $payload['sub'], $filename]);
+    $id = (int)$pdo->lastInsertId();
+
+    json_response([
+        'id' => $id,
+        'filename' => $filename,
+        'url' => '/data/notebook-images/' . $filename,
+    ], 201);
+}
+
+// GET /notebook/images/:lesson_id
+if ($method === 'GET' && preg_match('#^/notebook/images/(\d+)$#', $path, $m)) {
+    $payload = require_auth($config);
+    $lessonId = (int)$m[1];
+
+    // Ownership check
+    $stmt = $pdo->prepare('SELECT id FROM notebook_lessons WHERE id = ? AND user_id = ?');
+    $stmt->execute([$lessonId, $payload['sub']]);
+    if (!$stmt->fetch()) json_response(['error' => 'Not found'], 404);
+
+    $stmt = $pdo->prepare('SELECT id, lesson_id, filename, created_at FROM notebook_images WHERE lesson_id = ? ORDER BY created_at ASC');
+    $stmt->execute([$lessonId]);
+    $rows = $stmt->fetchAll();
+
+    // Add url field
+    $result = array_map(function($row) {
+        $row['url'] = '/data/notebook-images/' . $row['filename'];
+        return $row;
+    }, $rows);
+
+    json_response($result);
+}
+
+// DELETE /notebook/images/:id
+if ($method === 'DELETE' && preg_match('#^/notebook/images/(\d+)$#', $path, $m)) {
+    $payload = require_auth($config);
+    $imageId = (int)$m[1];
+
+    // Ownership check
+    $stmt = $pdo->prepare('SELECT id, filename FROM notebook_images WHERE id = ? AND user_id = ?');
+    $stmt->execute([$imageId, $payload['sub']]);
+    $image = $stmt->fetch();
+    if (!$image) json_response(['error' => 'Not found'], 404);
+
+    // Delete file
+    $filePath = $config['data_dir'] . '/notebook-images/' . $image['filename'];
+    if (file_exists($filePath)) unlink($filePath);
+
+    // Delete record
+    $pdo->prepare('DELETE FROM notebook_images WHERE id = ?')->execute([$imageId]);
+    json_response(['ok' => true]);
+}
+
+// ── Handwriting Recognition ────────────────────────────────────────────
+
+// POST /notebook/recognize
+if ($method === 'POST' && $path === '/notebook/recognize') {
+    $payload = require_auth($config);
+
+    $apiKey = $config['google_vision_api_key'] ?? '';
+    if (!$apiKey) json_response(['error' => 'Handwriting recognition not configured'], 400);
+
+    $body = get_json_body();
+    $imageData = $body['image'] ?? '';
+    if (!$imageData) json_response(['error' => 'Image data is required'], 400);
+
+    $requestBody = json_encode([
+        'requests' => [[
+            'image' => ['content' => $imageData],
+            'features' => [['type' => 'DOCUMENT_TEXT_DETECTION']],
+            'imageContext' => ['languageHints' => ['ar']],
+        ]],
+    ]);
+
+    $url = 'https://vision.googleapis.com/v1/images:annotate?key=' . $apiKey;
+
+    $opts = [
+        'http' => [
+            'method' => 'POST',
+            'header' => "Content-Type: application/json\r\n",
+            'content' => $requestBody,
+            'timeout' => 30,
+        ],
+    ];
+
+    try {
+        $context = stream_context_create($opts);
+        $result = file_get_contents($url, false, $context);
+        if ($result === false) {
+            json_response(['error' => 'Recognition failed'], 500);
+        }
+
+        $data = json_decode($result, true);
+        $text = $data['responses'][0]['fullTextAnnotation']['text'] ?? '';
+        json_response(['text' => $text]);
+    } catch (Exception $e) {
+        json_response(['error' => 'Recognition failed'], 500);
+    }
 }
