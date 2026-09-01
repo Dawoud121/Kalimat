@@ -4,6 +4,7 @@ import { Pen, Highlighter, Eraser, Undo2, Redo2, PenTool, Trash2 } from 'lucide-
 
 const COLORS = [
   { value: '#000000', label: 'Black' },
+  { value: '#ffffff', label: 'White' },
   { value: '#1a73e8', label: 'Blue' },
   { value: '#d45656', label: 'Red' },
   { value: '#0fa76e', label: 'Green' },

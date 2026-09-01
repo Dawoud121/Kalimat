@@ -292,7 +292,7 @@ body.has-secondary-sidebar .main-wrapper {
   height: 1px;
   background: var(--color-border);
   margin: clamp(2px, 0.3vw, 4px) clamp(8px, 0.8vw, 12px);
-  flex-shrink: 0;
+  flex-shrink: 1;
   transition: margin 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -5070,6 +5070,20 @@ input[type="checkbox"] {
   cursor: crosshair;
 }
 
+.notebook-zoom-indicator {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  background: var(--color-bg-elevated, rgba(0,0,0,0.6));
+  color: var(--color-text, #fff);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  opacity: 0.7;
+  pointer-events: none;
+  z-index: 5;
+}
+
 /* ── Toolbar ──────────────────────────────────────────────────────────── */
 .notebook-toolbar {
   display: flex;
@@ -5148,6 +5162,10 @@ input[type="checkbox"] {
 .notebook-color-swatch.active {
   border-color: var(--color-text);
   transform: scale(1.15);
+}
+
+.notebook-color-swatch[style*="--swatch-color: #ffffff"] {
+  border-color: var(--color-border-medium);
 }
 
 /* ── Thickness buttons ────────────────────────────────────────────────── */
