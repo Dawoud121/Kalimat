@@ -108,6 +108,11 @@ export default function Notebook() {
     setSelectedLesson(lesson)
     setStrokes(null)
     setSidebarOpen(false) // auto-close sidebar on selection
+    // Clear previous analysis
+    setAnalyzeOpen(false)
+    setAnalyzeResult(null)
+    setAnalyzeHistory([])
+    setAddedWords(new Set())
     // Remember last used lesson
     localStorage.setItem('kalimat_last_lesson', JSON.stringify({ lessonId: lesson.id, classId: lesson.class_id }))
     try {
@@ -234,6 +239,11 @@ export default function Notebook() {
   // ── AI Analysis ──
   const handleAnalyze = useCallback(async () => {
     if (!canvasRef.current) return
+    // If we already have results, just toggle the panel
+    if (analyzeResult && !analyzeResult.error) {
+      setAnalyzeOpen(prev => !prev)
+      return
+    }
     setAnalyzeOpen(true)
     setAnalyzing(true)
     setAnalyzeResult(null)
@@ -253,7 +263,7 @@ export default function Notebook() {
       setAnalyzeResult({ error: err.message || 'Analysis failed' })
     }
     setAnalyzing(false)
-  }, [])
+  }, [analyzeResult])
 
   const handleFollowUp = useCallback(async () => {
     const prompt = analyzePrompt.trim()
@@ -511,6 +521,7 @@ export default function Notebook() {
               template={selectedLesson.template || 'arabic'}
               onAnalyze={handleAnalyze}
               analyzing={analyzing}
+              hasAnalysis={!!analyzeResult && !analyzeResult.error}
             />
           </>
         ) : selectedLesson && strokes === null ? (

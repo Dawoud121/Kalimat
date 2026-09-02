@@ -230,7 +230,7 @@ function compressImage(file, maxDim = 800, quality = 0.7) {
 // ── Main Component ──
 const SNAP_DISTANCE = 10
 
-const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStrokes, template = 'arabic', onAnalyze, analyzing }, ref) {
+const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStrokes, template = 'arabic', onAnalyze, analyzing, hasAnalysis }, ref) {
   const staticCanvasRef = useRef(null)
   const activeCanvasRef = useRef(null)
   const linesCanvasRef = useRef(null)
@@ -288,16 +288,24 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     exportAsPNG,
     exportAsPDF,
     getCanvasImage: () => {
-      const pageBottom = getPageBottom()
+      // Only capture the area that has content (plus small margin)
+      let contentBottom = 0
+      for (const el of elementsRef.current) {
+        const b = getElementBounds(el)
+        const bottom = b.y + b.h
+        if (bottom > contentBottom) contentBottom = bottom
+      }
+      if (contentBottom === 0) contentBottom = 400 // empty page fallback
+      contentBottom += 40 // small margin
       const w = wrapperRef.current?.clientWidth || EXPORT_WIDTH
       const offscreen = document.createElement('canvas')
       offscreen.width = w * 2
-      offscreen.height = pageBottom * 2
+      offscreen.height = contentBottom * 2
       const ctx = offscreen.getContext('2d')
       ctx.scale(2, 2)
       ctx.fillStyle = getIsDark() ? PAGE_BG_DARK : PAGE_BG
-      ctx.fillRect(0, 0, w, pageBottom)
-      drawTemplateOnExport(ctx, w, pageBottom)
+      ctx.fillRect(0, 0, w, contentBottom)
+      drawTemplateOnExport(ctx, w, contentBottom)
       elementsRef.current.forEach(el => drawElement(ctx, el, imageCacheRef.current))
       return offscreen.toDataURL('image/png')
     },
@@ -1628,6 +1636,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
         onExportPDF={exportAsPDF}
         onAnalyze={onAnalyze}
         analyzing={analyzing}
+        hasAnalysis={hasAnalysis}
       />
       <div ref={wrapperRef} className="notebook-canvas-wrapper" tabIndex={-1}>
         <canvas ref={linesCanvasRef} className="notebook-canvas" />

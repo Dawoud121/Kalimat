@@ -26,7 +26,7 @@ export default function NotebookToolbar({
   canUndo, canRedo, onUndo, onRedo,
   onClear,
   onExportPNG, onExportPDF,
-  onAnalyze, analyzing,
+  onAnalyze, analyzing, hasAnalysis,
 }) {
   const [exportOpen, setExportOpen] = useState(false)
 
@@ -143,7 +143,7 @@ export default function NotebookToolbar({
       <div className="notebook-toolbar-divider" />
       <div className="notebook-toolbar-group">
         <button
-          className={`notebook-tool-btn notebook-analyze-btn${analyzing ? ' analyzing' : ''}`}
+          className={`notebook-tool-btn notebook-analyze-btn${analyzing ? ' analyzing' : ''}${hasAnalysis ? ' has-results' : ''}`}
           onClick={onAnalyze}
           disabled={analyzing}
           title="Analyze with AI"
