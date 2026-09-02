@@ -835,6 +835,9 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
 
   // ── Pointer handlers ──
   const handlePointerDown = useCallback((e) => {
+    // Ignore right-click — let contextmenu handler deal with it
+    if (e.button === 2) return
+
     // Touch: pan/zoom
     if (e.pointerType === 'touch') {
       handleTouchPointerDown(e)
@@ -880,18 +883,76 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       return
     }
 
+    // ── Cursor tool — select, move, resize any element ──
+    if (tool === 'cursor') {
+      // Check if clicking a resize handle on currently selected image first
+      if (selectedImage !== null) {
+        const selEl = elementsRef.current[selectedImage]
+        if (selEl?.type === 'image') {
+          const handle = getResizeHandle(selEl, pos.x, pos.y, viewRef.current.zoom)
+          if (handle) {
+            imgDragRef.current = {
+              mode: 'resize', handle,
+              startX: pos.x, startY: pos.y,
+              origX: selEl.x, origY: selEl.y,
+              origW: selEl.width, origH: selEl.height,
+            }
+            isDrawingRef.current = true
+            return
+          }
+        }
+      }
+      // Check if clicking on any element (images first, then text, then strokes)
+      for (let i = elementsRef.current.length - 1; i >= 0; i--) {
+        const el = elementsRef.current[i]
+        if (hitTestElement(el, pos.x, pos.y, el.type === 'image' ? 0 : 8 / viewRef.current.zoom)) {
+          if (el.type === 'image') {
+            setSelectedImage(i)
+            imgDragRef.current = {
+              mode: 'move', handle: null,
+              startX: pos.x, startY: pos.y,
+              origX: el.x, origY: el.y,
+              origW: el.width, origH: el.height,
+            }
+            isDrawingRef.current = true
+            return
+          }
+          if (el.type === 'text') {
+            setEditingText({ idx: i, el: { ...el }, isNew: false })
+            return
+          }
+        }
+      }
+      // Clicked empty space — deselect
+      setSelectedImage(null)
+      return
+    }
+
     // ── Image tool ──
     if (tool === 'image') {
       // Check if clicking on an existing image — select it for move/resize
+      if (selectedImage !== null) {
+        const selEl = elementsRef.current[selectedImage]
+        if (selEl?.type === 'image') {
+          const handle = getResizeHandle(selEl, pos.x, pos.y, viewRef.current.zoom)
+          if (handle) {
+            imgDragRef.current = {
+              mode: 'resize', handle,
+              startX: pos.x, startY: pos.y,
+              origX: selEl.x, origY: selEl.y,
+              origW: selEl.width, origH: selEl.height,
+            }
+            isDrawingRef.current = true
+            return
+          }
+        }
+      }
       for (let i = elementsRef.current.length - 1; i >= 0; i--) {
         const el = elementsRef.current[i]
         if (el.type === 'image' && hitTestElement(el, pos.x, pos.y, 0)) {
           setSelectedImage(i)
-          // Check if clicking a resize handle
-          const handle = getResizeHandle(el, pos.x, pos.y, viewRef.current.zoom)
           imgDragRef.current = {
-            mode: handle ? 'resize' : 'move',
-            handle,
+            mode: 'move', handle: null,
             startX: pos.x, startY: pos.y,
             origX: el.x, origY: el.y,
             origW: el.width, origH: el.height,
@@ -1016,8 +1077,8 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
 
     const pos = screenToCanvas(e.clientX, e.clientY)
 
-    // Image move/resize
-    if (tool === 'image' && imgDragRef.current && selectedImage !== null) {
+    // Image move/resize (cursor or image tool)
+    if ((tool === 'image' || tool === 'cursor') && imgDragRef.current && selectedImage !== null) {
       const el = elementsRef.current[selectedImage]
       if (!el) return
       const d = imgDragRef.current
@@ -1195,7 +1256,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     isDrawingRef.current = false
 
     // Image move/resize release
-    if (tool === 'image' && imgDragRef.current && selectedImage !== null) {
+    if ((tool === 'image' || tool === 'cursor') && imgDragRef.current && selectedImage !== null) {
       const d = imgDragRef.current
       const el = elementsRef.current[selectedImage]
       imgDragRef.current = null
@@ -1752,7 +1813,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       setShowSelToolbar(false)
       lassoPolygonRef.current = null
     }
-    if (tool !== 'image') {
+    if (tool !== 'image' && tool !== 'cursor') {
       setSelectedImage(null)
     }
     redrawAll()

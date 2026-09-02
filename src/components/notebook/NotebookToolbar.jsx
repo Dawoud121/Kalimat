@@ -1,6 +1,6 @@
-// v2.9.1
+// v2.9.2
 import React, { useState, useEffect, useRef } from 'react'
-import { Pen, Highlighter, Eraser, Undo2, Redo2, Trash2, Lasso, Type, ImagePlus, Spline, Download, Sparkles, Languages, BookOpenText, GraduationCap, ScanSearch, MessageCircleQuestion } from 'lucide-react'
+import { Pen, Highlighter, Eraser, Undo2, Redo2, Trash2, Lasso, Type, ImagePlus, Spline, Download, Sparkles, Languages, BookOpenText, GraduationCap, ScanSearch, MessageCircleQuestion, MousePointer2 } from 'lucide-react'
 
 const AI_MODES = [
   { key: 'transcribe', label: 'Transcribe & Translate', icon: Languages, desc: 'Read and translate your handwriting' },
@@ -82,6 +82,13 @@ export default function NotebookToolbar({
       {/* Selection & insert tools */}
       <div className="notebook-toolbar-group">
         <button
+          className={`notebook-tool-btn${tool === 'cursor' ? ' active' : ''}`}
+          onClick={() => onToolChange('cursor')}
+          title="Select / Move"
+        >
+          <MousePointer2 size={16} />
+        </button>
+        <button
           className={`notebook-tool-btn${tool === 'lasso' ? ' active' : ''}`}
           onClick={() => onToolChange('lasso')}
           title="Lasso Select"
@@ -105,7 +112,7 @@ export default function NotebookToolbar({
       </div>
 
       {/* Color & thickness (visible for pen/highlighter/text) */}
-      {tool !== 'eraser' && tool !== 'lasso' && tool !== 'image' && (
+      {tool !== 'eraser' && tool !== 'lasso' && tool !== 'image' && tool !== 'cursor' && (
         <>
           <div className="notebook-toolbar-divider" />
           <div className="notebook-toolbar-group">
