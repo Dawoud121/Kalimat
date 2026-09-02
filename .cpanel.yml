@@ -11,6 +11,8 @@ deployment:
     - /bin/cp dist/apple-touch-icon.png $DEPLOYPATH/apple-touch-icon.png
     - /bin/cp dist/icon-192.png $DEPLOYPATH/icon-192.png
     - /bin/cp dist/icon-512.png $DEPLOYPATH/icon-512.png
+    - /bin/cp dist/manifest.json $DEPLOYPATH/manifest.json
+    - /bin/cp dist/sw.js $DEPLOYPATH/sw.js
 
     # Deploy backend PHP
     - /bin/rm -rf $DEPLOYPATH/api
