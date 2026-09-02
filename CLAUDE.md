@@ -23,11 +23,11 @@ public_html/
 │   ├── index.php           ← single-entry router
 │   ├── lib/
 │   │   ├── config.php      ← loads ../../config.php
-│   │   ├── db.php          ← SQLite connection + 20-table schema
+│   │   ├── db.php          ← SQLite connection + 24-table schema
 │   │   ├── jwt.php         ← HS256 encode/decode
 │   │   ├── auth.php        ← require_auth / require_admin / optional_auth
 │   │   ├── helpers.php     ← utility functions
-│   │   └── tts.php         ← Azure TTS wrapper
+│   │   └── tts.php         ← legacy Azure TTS wrapper (unused)
 │   └── routes/
 │       ├── auth.php        ← login, register, me, change-password
 │       ├── profiles.php    ← user profile CRUD
@@ -43,12 +43,14 @@ public_html/
 │       ├── study.php       ← study log
 │       ├── sessions.php    ← app session tracking
 │       ├── feedback.php    ← user feedback
+│       ├── notebook.php    ← notebook classes/lessons/strokes/images CRUD + Gemini analysis
 │       ├── admin.php       ← admin stats + user management
-│       └── tts.php         ← text-to-speech endpoint + cache serving
+│       └── tts.php         ← legacy Azure TTS endpoint (unused — TTS is now client-side)
 ├── data/
 │   ├── exports/            ← 19 CSV files from Supabase export
 │   ├── kalimat.sqlite      ← main database (created by import-data.php)
-│   ├── tts-cache/          ← cached MP3 files from Azure TTS
+│   ├── notebook-images/    ← uploaded images for notebook lessons
+│   ├── tts-cache/          ← legacy cached MP3 files from Azure TTS (no longer used)
 │   └── .htaccess           ← blocks direct HTTP access to data/
 ├── .htaccess               ← API rewrite + auth header fix + SPA fallback
 ├── config.php              ← real secrets (created from sample, gitignored)
@@ -58,11 +60,21 @@ public_html/
 ```
 
 ### Deployment steps (for updating the live site)
+Deployment is via **GitHub → cPanel Git Version Control**:
 1. Run `npm run build` locally to generate fresh `dist/`
-2. Upload `dist/index.html` → `public_html/index.html` (overwrite)
-3. Upload `dist/assets/` → `public_html/assets/` (delete old assets folder first, then upload new)
-4. Upload `server/.htaccess` → `public_html/.htaccess` (if changed)
-5. If backend PHP files changed, upload the relevant files from `server/` to matching paths in `public_html/`
+2. Commit changes + built `dist/` to git
+3. `git push origin main`
+4. Open **cPanel → Git Version Control → Manage (Kalimat repo) → Pull or Deploy**
+5. Click **"Update from Remote"** then **"Deploy HEAD Commit"**
+
+The `.cpanel.yml` in the repo root handles all file copying automatically:
+- Cleans old `assets/` and `api/`, copies fresh `dist/` output (index.html, assets, favicons) to `public_html/`
+- Copies `server/api/`, `.htaccess`, and CLI tools to `public_html/`
+- Does NOT touch `config.php`, `data/kalimat.sqlite`, or `data/tts-cache/` (these are server-only)
+- **Important**: `api/` must be deleted before copying (`rm -rf` then `cp -r`) — otherwise `cp -r` nests `api/api/` inside the existing directory and changes don't deploy
+
+**GitHub repo**: https://github.com/Dawoud121/Kalimat (public)
+**cPanel repo path**: `/home/kalimat/repositories/Kalimat/public_html`
 
 ### Critical .htaccess rules (`server/.htaccess`)
 Apache/cPanel **strips the `Authorization` header** before PHP receives it. Without this fix, ALL authenticated API calls fail with "Missing or invalid authorization header":
@@ -88,8 +100,8 @@ Created from `config.sample.php` on the server. Contains:
 - `admin_email` — `dawoudhussein07@gmail.com`
 - `data_dir` — path to data/ folder (default: `__DIR__ . '/data'`)
 - `site_url` — `https://kalimatstudio.com`
-- `azure_tts_key` — Azure Speech Services API key (from Azure portal → Speech resource → Keys and Endpoint → Key 1)
-- `azure_tts_region` — Azure region (e.g. `australiaeast`)
+- `azure_tts_key` / `azure_tts_region` — legacy Azure TTS config, no longer used (TTS is now client-side via Web Speech API)
+- `gemini_api_key` — Google Gemini API key for notebook AI analysis
 
 ---
 
@@ -144,7 +156,7 @@ Local and live are independent databases. Creating accounts, importing data, or 
 
 ---
 
-## Current Version: 2.8.0
+## Current Version: 2.9.2
 Version must stay in sync across three places on every change:
 1. `package.json` → `"version"`
 2. `src/pages/Settings.jsx` → `const APP_VERSION` + `// vX.X.X` header comment
@@ -161,6 +173,8 @@ Version policy: major features = x.Y.0, bug fixes = x.y.Z
 - lucide-react for all icons (no emojis in UI)
 - Dexie.js — used only for offline cache (`src/db/offlineDb.js`), not primary storage
 - @dnd-kit/core + @dnd-kit/sortable + @dnd-kit/utilities + @dnd-kit/modifiers — drag-and-drop (used in TeamTab only)
+- jspdf — PDF export for notebook
+- HTML5 Canvas + Pointer Events — notebook handwriting canvas (pressure-sensitive, multi-touch)
 
 ---
 
@@ -181,7 +195,7 @@ Every `supabase.from('table').select()` / `.insert()` / `.update()` / `.delete()
 Files fully migrated from Supabase:
 - `src/lib/dataService.js` — all ~70 data functions
 - `src/auth/AuthContext.jsx` — auth flow
-- `src/components/SpeakButton.jsx` — TTS (was Supabase Edge Function)
+- `src/components/SpeakButton.jsx` — TTS (was Supabase Edge Function → Azure → now browser Web Speech API)
 - `src/lib/syncService.js` — offline sync
 - `src/pages/Dashboard.jsx`, `Stats.jsx`, `AdminStats.jsx`, `QuranicLexicon.jsx`, `QuranContext.jsx`
 - `src/pages/ForgotPassword.jsx`, `ResetPassword.jsx` — simplified (no email reset, directs to admin)
@@ -189,13 +203,13 @@ Files fully migrated from Supabase:
 - `vite.config.js` — added dev proxy
 - `.env` / `.env.example` — changed from Supabase vars to `VITE_API_URL=/api`
 
-`src/lib/supabase.js` still exists but is NOT imported by anything — can be deleted.
+`src/lib/supabase.js` has been deleted — was unused dead code from the migration.
 
 ---
 
 ## Backend (`server/`)
 - PHP + SQLite, deployed to cPanel shared hosting
-- Single-entry router: `server/api/index.php` dispatches to `server/api/routes/*.php` (17 route files)
+- Single-entry router: `server/api/index.php` dispatches to `server/api/routes/*.php` (18 route files)
 - Database: `server/data/kalimat.sqlite` (auto-created on first request via `server/api/lib/db.php`)
 - Config: `server/config.php` (jwt_secret, admin_email, data_dir, site_url, azure_tts_key, azure_tts_region)
 - Auth: JWT (HS256) via `server/api/lib/jwt.php` — no third-party auth service
@@ -226,7 +240,11 @@ Files fully migrated from Supabase:
 | `study_log` | daily study statistics |
 | `app_sessions` | session tracking |
 | `feedback` | user feedback |
-| `tts_rate_limits` | Azure TTS call tracking per user per day |
+| `notebook_classes` | notebook class folders per user (title, order_index) |
+| `notebook_lessons` | lessons within classes (title, date, template, order_index) |
+| `notebook_strokes` | one row per stroke/element per lesson (stroke_data JSON, order_index) |
+| `notebook_images` | uploaded images for lessons (filename → data/notebook-images/) |
+| `tts_rate_limits` | Legacy Azure TTS call tracking (no longer used) |
 
 ### Security notes
 - Trust score protection: admin check in `PUT /profiles/:id` route (replaces `protect_trust_score` trigger)
@@ -239,7 +257,7 @@ Files fully migrated from Supabase:
 - All snake_case columns normalized to camelCase in `src/lib/dataService.js`
 - `decks.review_frequency`: `'daily' | 'weekly' | 'monthly' | 'custom' | NULL`
 - `sentences.source`: `'user'` (manual) vs `'sentence_flag'` (auto-flagged)
-- `contributions.source`: `'user'` vs `'sentence_flag'`
+- `contributions.source`: `'user'` vs `'sentence_flag'` vs `'gemini'` (AI-detected from notebook analysis)
 
 ### CLI tools
 - `php server/import-data.php` — import CSV exports from `server/data/exports/` into SQLite (19 tables). Shows deprecation warnings on PHP 8.5 — harmless.
@@ -267,8 +285,15 @@ Files fully migrated from Supabase:
 | POST | `/sessions/*` | required | App session tracking |
 | POST | `/feedback` | required | Submit feedback |
 | GET | `/admin/stats` | admin | Admin dashboard stats |
-| POST | `/tts/speak` | required | Azure TTS (returns MP3 blob) |
-| GET | `/tts/cache/:key` | none | Serve cached TTS audio |
+| GET/POST/PUT/DELETE | `/notebook/classes/*` | required | Notebook class CRUD |
+| GET/POST/PUT/DELETE | `/notebook/classes/:id/lessons` `/notebook/lessons/:id` | required | Lesson CRUD |
+| GET/PUT | `/notebook/lessons/:id/strokes` | required | Stroke data (full replace on save) |
+| POST/GET/DELETE | `/notebook/images/*` | required | Image upload + list + delete |
+| POST | `/notebook/analyze` | required | Gemini AI analysis (multimodal, 5 modes) |
+| DELETE | `/contributions/:id` | admin | Delete a contribution |
+| POST | `/contributions/:id/to-dictionary` | admin | Add contribution word to dictionary |
+| POST | `/tts/speak` | required | Legacy Azure TTS (no longer used — TTS is client-side) |
+| GET | `/tts/cache/:key` | none | Legacy cached TTS audio (no longer used) |
 
 ---
 
@@ -301,6 +326,7 @@ Protected (ProtectedRoute → Layout → Outlet):
 - `/stories` — Stories.jsx
 - `/games` — Games.jsx hub
 - `/games/memory` `/games/multiple-choice` `/games/root-grouping` `/games/speed-round` `/games/spell-it-out`
+- `/notebook` — Notebook.jsx (handwriting notebook with AI analysis)
 - `/settings` — Settings.jsx
 
 ---
@@ -316,6 +342,7 @@ Protected (ProtectedRoute → Layout → Outlet):
 - Dictionary → `/dictionary`
 - Quranic Lexicon → `/quran`
 - Stories → `/stories`
+- Notebook → `/notebook`
 - Community Decks → `/community`
 - Contributions → `/contributions`
 - Statistics → `/stats`
@@ -415,13 +442,85 @@ All API CRUD lives here (uses `api.get/post/put/del` from `src/lib/api.js`). Key
 - `patchCommunityDeckMeta` and `patchCommunityDeckWords` (also updates `word_count`) for API updates
 - `batchUpdateCollectionOrders([{id, order_index}])` and `batchUpdateDeckOrders([{id, order_index, collection_id}])` for persisting drag order
 
-**Contributions** — secondary sidebar (?section=pending|approved|submissions|flagged). Community word suggestions: upvote/downvote, auto-approve at +5 net votes. Admin can approve/reject manually. "Unknown Words" tab (section=flagged) shows sentence-auto-flagged contributions (`source='sentence_flag'`); populated when admin approves a sentence and tokens not found in dictionary. "Pending" tab shows only the current user's own pending submissions (excludes sentence_flag source). Trust score on profiles. Users cannot vote on their own submissions.
+**Contributions** — secondary sidebar (?section=pending|approved|submissions|flagged|gemini). Community word suggestions: upvote/downvote, auto-approve at +5 net votes. Admin can approve/reject manually. "Unknown Words" tab (section=flagged) shows sentence-auto-flagged contributions (`source='sentence_flag'`); populated when admin approves a sentence and tokens not found in dictionary. "Pending" tab shows only the current user's own pending submissions (excludes sentence_flag source). Trust score on profiles. Users cannot vote on their own submissions.
+- **Gemini tab** (section=gemini): Shows AI-detected words from notebook analysis (`source='gemini'`). Admin-only features: Delete button (Trash2) removes contribution + votes + audit, "Dict" button (BookPlus) adds word to dictionary with forms lookup from `words` table (checks for duplicates by stripped diacritics). `dictAdded` Set tracks IDs already added.
+- **Gemini contribution deduplication**: Separate code path for `source === 'gemini'` — checks ALL gemini contributions regardless of status (not just pending), silently returns `isDuplicate` without creating votes.
 
 **Stats** — plain-English labels, "Your Numbers", "Your Contributions", Review History (14 days), Coming Up This Week (7-day forecast), Deck Breakdown table, top metrics.
 
 **AdminStats** — admin-only. User list, app sessions, engagement stats, content stats, feedback inbox.
 
 **Stories** — bookshelf layout (cartoony book spines, hover-lift, info panel below). Collections: Nawawi's 40 Hadith + Ibn Rajab's 8 (supplement). Books show reading progress overlay. Clicking opens story reader with segmented text (arabic + translation + notes per segment).
+
+**Notebook** (`/notebook`) — Full handwriting notebook for Arabic lesson notes. Class → Lesson hierarchy in a collapsible left sidebar panel. Lessons contain a full canvas for drawing, text, and images.
+
+### Files
+- `src/pages/Notebook.jsx` (v2.9.1) — page shell: sidebar, class/lesson tree, AI analysis panel
+- `src/components/notebook/NotebookCanvas.jsx` (v2.9.2) — all canvas logic: drawing, tools, elements, undo/redo, export
+- `src/components/notebook/NotebookToolbar.jsx` (v2.9.2) — toolbar with tool buttons, color/thickness, AI menu
+- `src/components/notebook/SelectionToolbar.jsx` (v2.9.0) — floating toolbar for lasso selection (color, thickness, duplicate, flip, delete)
+- `server/api/routes/notebook.php` — classes/lessons/strokes/images CRUD + Gemini analysis endpoint
+
+### Canvas Architecture
+- Three stacked `<canvas>` layers: `linesCanvas` (template background), `staticCanvas` (committed elements), `activeCanvas` (in-progress stroke preview)
+- `elementsRef` (renamed from `strokesRef`): polymorphic array of stroke, text, and image elements. Elements without `type` field are treated as strokes for backward compatibility.
+- Viewport transform: `viewRef = { x, y, zoom }` — pinch-to-zoom on touch, ctrl+wheel zoom, touch pan, wheel scroll
+- Retina/HiDPI: `devicePixelRatio` scaling + `ResizeObserver`
+- Auto-save: 2-second debounce via `scheduleSave()`, also saves on `beforeunload` and lesson switch
+- Undo/redo stack: `undoStackRef` / `redoStackRef` — action types: `draw`, `erase`, `clear`, `transform`, `deleteSelected`, `addText`, `editText`, `colorChange`, `thicknessChange`
+
+### Tools
+- **Pen** — pressure-sensitive strokes via Pointer Events. Snap-to-endpoint (10px). Line straightening on hold (500ms timer → straight line preview, can rotate/resize around origin). Stroke smoothing toggle (quadratic Bezier through midpoints). RDP point simplification (tolerance 0.3) for data size. Colors (7) and thickness (thin/medium/thick).
+- **Highlighter** — `globalCompositeOperation: 'multiply'`, `HIGHLIGHTER_OPACITY = 0.3`, width ×3
+- **Eraser** — hit-test on move, removes matching elements
+- **Cursor** (MousePointer2 icon) — universal select/move/resize tool. Hit-tests images (move + corner resize handles), text (opens editor), strokes. Aspect-ratio-locked resize via corner handles (tl/tr/bl/br).
+- **Lasso** — draw freeform polygon, selects elements inside via ray-casting (`pointInPolygon`). Selection persists (Notability-style) until click-away or tool change. Uses ref-synced state pattern (`selectedIndicesRef` + `selectedImageRef`) for immediate canvas drawing after `setState`. Lasso polygon stored in `lassoPolygonRef` for persistent visual display. Drag to move selection. Click inside → toggle floating SelectionToolbar. Undo/redo for transform and delete.
+- **Text** — click to create new text element, click existing to edit. RTL direction, Noto Naskh Arabic font. `editingText` state with `textAreaRef` overlay.
+- **Image** — insert images from file picker or clipboard paste (right-click → `navigator.clipboard.read()`). `compressImage(file, maxDim=2048, quality=0.92)`. Images are base64 data URLs stored inline in the element. Select → move/resize with blue dashed border + white corner handles. Aspect-ratio-locked resize.
+- **Right-click**: `if (e.button === 2) return` at top of `handlePointerDown` blocks drawing. `contextmenu` handler reads clipboard for image paste.
+
+### Ref-synced state pattern (critical for canvas drawing)
+```jsx
+const [selectedIndices, _setSelectedIndices] = useState(null)
+const selectedIndicesRef = useRef(null)
+const setSelectedIndices = (v) => { selectedIndicesRef.current = v; _setSelectedIndices(v) }
+```
+Needed because `setState` is async — calling `setSelectedIndices(hits)` then `redrawAll()` reads stale state in the closure. Canvas drawing functions (`redrawStatic`, `drawSelectionHighlight`, `updateSelectionBoundsScreen`) read from refs for immediate access.
+
+### Page Templates
+5 templates: `lined`, `blank`, `grid`, `dotted`, `arabic` (default). Arabic template has 48px spacing with solid baseline + dashed midline guide. Template stored in `notebook_lessons.template` column. Template selector dropdown in lesson header.
+
+### Export
+- `exportAsPNG` / `exportAsPDF` — renders to offscreen canvas at `EXPORT_WIDTH = 800`. PNG via `canvas.toDataURL()`, PDF via jspdf.
+- `getCanvasImage()` — captures content area (up to last element + 40px margin) at 2x resolution for AI analysis.
+
+### AI Analysis (5 modes)
+Toolbar Sparkles button opens a popover menu with 5 modes:
+1. **Transcribe & Translate** (`transcribe`) — reads Arabic handwriting, provides transcription + translation
+2. **Explain My Notes** (`explain`) — turns messy notes into organized study notes
+3. **Tutor Feedback** (`feedback`) — grammar corrections, handwriting tips, what went well
+4. **Full Analysis** (`full`) — all of the above combined
+5. **Ask About This Note** (`ask`) — conversational Q&A about the notes
+
+All modes also extract vocabulary words with full tashkeel, roots, forms, and example sentences.
+
+- **Backend** (`notebook.php`): Modular prompt builder per mode. Uses Gemini 3.6 Flash (`gemini-3.6-flash`). `system_instruction` with mode-specific JSON schema. `responseMimeType: 'application/json'`. Temperature 0.3. Response normalization: remaps Gemini's output fields to expected field names per mode (Gemini often ignores the requested schema and puts content in wrong fields).
+- **Frontend** (`Notebook.jsx`): Analysis panel slides in on the right. `analyzeResult._mode` drives which sections to display. `show(field, ...modes)` helper gates sections — falls back to showing everything when `_mode` is undefined (backward compat with cached results). Follow-up Q&A with conversation history. Results cached in `localStorage` per lesson. "Re-analyze" button preserves current mode.
+- **Auto-log words**: `autoLogWords()` submits all Gemini-detected words to contributions with `source: 'gemini'`, `status: 'approved'`.
+- **Add to deck**: Words panel shows deck selector + per-word "Add" button to create word in user's deck.
+
+### Sidebar (overlay panel)
+Left panel with class/lesson tree. Auto-closes when a lesson is selected. Remembers last-used lesson in `localStorage` (`kalimat_last_lesson`). Class CRUD (create/rename/delete), Lesson CRUD (create with title+date/rename/delete). 3-dot menus with Pencil/Plus/Trash2 actions.
+
+### Data service functions (`dataService.js`)
+- `getNotebookClasses()` / `createNotebookClass()` / `updateNotebookClass()` / `deleteNotebookClass()`
+- `getNotebookLessons(classId)` / `createNotebookLesson()` / `updateNotebookLesson()` / `deleteNotebookLesson()`
+- `getNotebookStrokes(lessonId)` / `saveNotebookStrokes(lessonId, strokes)` — full replace on save
+- `updateLessonTemplate(lessonId, template)`
+- `uploadNotebookImage(lessonId, file)` / `getNotebookImages(lessonId)` / `deleteNotebookImage(imageId)`
+- `analyzeNote(imageBase64, prompt, history = [], mode = 'full')` — sends to Gemini via backend
+- `deleteContribution(contributionId)` — admin-only DELETE
+- `addContributionToDictionary(contributionId)` — admin-only, adds word to dictionary with forms lookup
 
 **Games** — hub page + 5 games:
 - Memory Match: flip card pairs
@@ -444,18 +543,17 @@ All API CRUD lives here (uses `api.get/post/put/del` from `src/lib/api.js`). Key
 
 ---
 
-## TTS (`server/api/routes/tts.php` + `server/api/lib/tts.php`)
-- Azure TTS neural voice: `ar-SA-HamedNeural` (Saudi MSA — no classical Arabic voice exists in any cloud TTS)
-- **Requires Azure Speech Services API key** in `config.php` (`azure_tts_key`). Without it, TTS returns errors.
-- **Azure key setup**: Azure portal → search "Speech Services" → create or select resource → "Keys and Endpoint" → copy Key 1. Region shown on same page goes in `azure_tts_region`.
-- PHP route caches audio as MP3 files in `server/data/tts-cache/` (SHA-256 hash of `text|rate` as filename)
-- `SpeakButton.jsx` strips diacritics before sending, checks session cache → server cache → `POST /tts/speak`
-- **Rate limiting**: 300 new Azure calls/day per user tracked in `tts_rate_limits` table. Cached responses are free.
-- **Auth**: SpeakButton sends JWT via `api.postBlob()`. PHP route calls `require_auth()` to identify user.
-- **Char limit**: 2500 characters per request (covers full hadith segments)
-- Story mode rate: `-25%` | Default rate everywhere else: `-15%`
-- **Double-play fix**: `_currentAudio` global is stopped inside the `play(url)` helper (not at the top of `speakArabic`).
-- `SpeakButton` accepts `className` prop (used for `.speak-btn-lg` large variant in Spell It Out listening mode).
+## TTS (`src/components/SpeakButton.jsx`)
+- Uses the **browser's built-in Web Speech API** (`speechSynthesis`) — no server-side TTS, no Azure dependency
+- Requires the user to have an Arabic voice installed on their device (e.g. Saudi Arabia Arabic language pack)
+- Voice selection: picks the first voice where `lang` starts with `ar` via `speechSynthesis.getVoices()`
+- `utterance.lang = 'ar-SA'` ensures Arabic pronunciation even if no exact voice match
+- Story mode rate: `-25%` (parsed to `0.75`) | Default rate everywhere else: `-15%` (parsed to `0.85`)
+- `speakArabic(text, { rate })` is exported for direct use (e.g. Spell It Out auto-play)
+- `SpeakButton` accepts `className` prop (used for `.speak-btn-lg` large variant in Spell It Out listening mode)
+- Double-play prevention: `speechSynthesis.cancel()` called before each new utterance
+- No authentication, caching, or rate limiting needed — runs entirely client-side
+- **Legacy**: Server-side Azure TTS routes (`server/api/routes/tts.php`, `server/api/lib/tts.php`) and `tts_rate_limits` table still exist but are no longer used by the frontend.
 
 ---
 
@@ -485,5 +583,9 @@ All API CRUD lives here (uses `api.get/post/put/del` from `src/lib/api.js`). Key
 - `dist/` must be rebuilt (`npm run build`) and re-uploaded after any frontend code change — the live server serves static files, not a dev server
 - Local and live databases are completely independent — changes to one do not affect the other
 - `import-data.php` imports users WITHOUT passwords — must run `set-password.php` for each account after import
-- `src/lib/supabase.js` still exists but is dead code — nothing imports it, safe to delete
-- **Community deck `words_json` missing forms**: The JSON only stores `root`, `arabic`, `english`, `partOfSpeech`, `exampleSentence`. Verb/noun forms (`past`, `present`, `command`, `masdar`, `singular`, `dual`, `plural`) are NOT included. Admin added forms to Bayna Yadayk words manually on the live server, but those only exist in the admin's personal `words` table — other users don't get them on import. **TODO**: Update `words_json` on live server to include form fields, and update the "Share to community" flow to export forms into the JSON.
+- `src/lib/supabase.js` has been deleted — was dead code from the Supabase migration
+- Notebook canvas: `selectedIndices` / `selectedImage` state must use ref-synced pattern — calling `setState` then `redrawAll()` reads stale state because React batches updates. Canvas drawing reads from `selectedIndicesRef.current` / `selectedImageRef.current` instead.
+- Gemini API doesn't reliably follow JSON schema — backend normalizes response fields per mode (e.g. remap `analysis` → `explanation` for explain mode)
+- PowerShell doesn't support `&&` chaining — `git add` commands must be run one at a time, keep each short to avoid line-splitting
+- Notebook elements array is polymorphic: stroke (legacy, no `type` field), `type: 'text'`, `type: 'image'`. Elements without `type` treated as strokes for backward compat.
+- `notebook_lessons.template` defaults to `'arabic'` — migration adds column to existing tables via try/catch ALTER TABLE

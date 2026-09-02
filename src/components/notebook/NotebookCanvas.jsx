@@ -845,16 +845,84 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     // Ignore right-click — let contextmenu handler deal with it
     if (e.button === 2) return
 
-    // Touch: pan/zoom
+    // Touch: pan/zoom (but allow tool interaction for lasso/cursor/image)
     if (e.pointerType === 'touch') {
       handleTouchPointerDown(e)
-      if (gestureRef.current.pointers.size === 1) {
-        const v = viewRef.current
-        panRef.current = { active: true, startX: e.clientX, startY: e.clientY, startViewX: v.x, startViewY: v.y }
-        e.preventDefault()
-        activeCanvasRef.current?.setPointerCapture(e.pointerId)
-        return
+      // Two-finger gesture always does zoom/pan
+      if (gestureRef.current.pointers.size >= 2) return
+
+      const pos = screenToCanvas(e.clientX, e.clientY)
+
+      // Lasso: allow touch to drag existing selection or toggle toolbar
+      if (tool === 'lasso' && selectedIndicesRef.current && selectedIndicesRef.current.size > 0) {
+        const insideSelection = lassoPolygonRef.current
+          ? pointInPolygon(pos.x, pos.y, lassoPolygonRef.current)
+          : (() => { const cb = getSelectionBounds(elementsRef.current, selectedIndicesRef.current); return pos.x >= cb.x && pos.x <= cb.x + cb.w && pos.y >= cb.y && pos.y <= cb.y + cb.h })()
+        if (insideSelection) {
+          e.preventDefault()
+          activeCanvasRef.current?.setPointerCapture(e.pointerId)
+          selDragRef.current = {
+            startX: pos.x, startY: pos.y, moved: false,
+            origPositions: [...selectedIndicesRef.current].map(idx => {
+              const el = elementsRef.current[idx]
+              if (el.type === 'text' || el.type === 'image') return { idx, x: el.x, y: el.y }
+              return { idx, points: el.points.map(p => ({ ...p })) }
+            }),
+            origLassoPoly: lassoPolygonRef.current ? lassoPolygonRef.current.map(p => ({ ...p })) : null,
+          }
+          isDrawingRef.current = true
+          panRef.current = { active: false }
+          return
+        }
       }
+
+      // Cursor: allow touch to select/move/resize images
+      if (tool === 'cursor') {
+        // Check resize handles on selected image
+        if (selectedImageRef.current !== null) {
+          const selEl = elementsRef.current[selectedImageRef.current]
+          if (selEl?.type === 'image') {
+            const handle = getResizeHandle(selEl, pos.x, pos.y, viewRef.current.zoom)
+            if (handle) {
+              e.preventDefault()
+              activeCanvasRef.current?.setPointerCapture(e.pointerId)
+              imgDragRef.current = {
+                mode: 'resize', handle,
+                startX: pos.x, startY: pos.y,
+                origX: selEl.x, origY: selEl.y,
+                origW: selEl.width, origH: selEl.height,
+              }
+              isDrawingRef.current = true
+              panRef.current = { active: false }
+              return
+            }
+          }
+        }
+        // Check if touching any image
+        for (let i = elementsRef.current.length - 1; i >= 0; i--) {
+          const el = elementsRef.current[i]
+          if (el.type === 'image' && hitTestElement(el, pos.x, pos.y, 0)) {
+            e.preventDefault()
+            activeCanvasRef.current?.setPointerCapture(e.pointerId)
+            setSelectedImage(i)
+            imgDragRef.current = {
+              mode: 'move', handle: null,
+              startX: pos.x, startY: pos.y,
+              origX: el.x, origY: el.y,
+              origW: el.width, origH: el.height,
+            }
+            isDrawingRef.current = true
+            panRef.current = { active: false }
+            return
+          }
+        }
+      }
+
+      // Default single-finger: pan
+      const v = viewRef.current
+      panRef.current = { active: true, startX: e.clientX, startY: e.clientY, startViewX: v.x, startViewY: v.y }
+      e.preventDefault()
+      activeCanvasRef.current?.setPointerCapture(e.pointerId)
       return
     }
 
@@ -1066,7 +1134,10 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   const handlePointerMove = useCallback((e) => {
     if (e.pointerType === 'touch') {
       handleTouchPointerMove(e)
-      if (panRef.current.active && gestureRef.current.pointers.size === 1 && !gestureRef.current.active) {
+      // If we're actively dragging a selection or image via touch, fall through to normal handlers
+      if (isDrawingRef.current && (selDragRef.current || imgDragRef.current)) {
+        // Don't pan — handle below
+      } else if (panRef.current.active && gestureRef.current.pointers.size === 1 && !gestureRef.current.active) {
         e.preventDefault()
         const v = viewRef.current
         v.x = panRef.current.startViewX + (e.clientX - panRef.current.startX)
@@ -1075,8 +1146,9 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
         redrawAll()
         updateSelectionBoundsScreen()
         return
+      } else {
+        return
       }
-      return
     }
 
     if (!isDrawingRef.current) return
@@ -1085,8 +1157,9 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     const pos = screenToCanvas(e.clientX, e.clientY)
 
     // Image move/resize (cursor or image tool)
-    if ((tool === 'image' || tool === 'cursor') && imgDragRef.current && selectedImage !== null) {
-      const el = elementsRef.current[selectedImage]
+    const selImg = selectedImageRef.current
+    if ((tool === 'image' || tool === 'cursor') && imgDragRef.current && selImg !== null) {
+      const el = elementsRef.current[selImg]
       if (!el) return
       const d = imgDragRef.current
       const dx = pos.x - d.startX
@@ -1256,23 +1329,29 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     if (e.pointerType === 'touch') {
       handleTouchPointerUp(e)
       panRef.current.active = false
-      return
+      // If we were dragging a selection or image via touch, fall through to release handlers
+      if (isDrawingRef.current && (selDragRef.current || imgDragRef.current)) {
+        // Fall through — don't return
+      } else {
+        return
+      }
     }
 
     if (!isDrawingRef.current) return
     isDrawingRef.current = false
 
     // Image move/resize release
-    if ((tool === 'image' || tool === 'cursor') && imgDragRef.current && selectedImage !== null) {
+    const selImg = selectedImageRef.current
+    if ((tool === 'image' || tool === 'cursor') && imgDragRef.current && selImg !== null) {
       const d = imgDragRef.current
-      const el = elementsRef.current[selectedImage]
+      const el = elementsRef.current[selImg]
       imgDragRef.current = null
       if (el && (el.x !== d.origX || el.y !== d.origY || el.width !== d.origW || el.height !== d.origH)) {
         undoStackRef.current.push({
           type: 'transform',
-          indices: [selectedImage],
-          before: [{ idx: selectedImage, x: d.origX, y: d.origY, width: d.origW, height: d.origH }],
-          after: [{ idx: selectedImage, x: el.x, y: el.y, width: el.width, height: el.height }],
+          indices: [selImg],
+          before: [{ idx: selImg, x: d.origX, y: d.origY, width: d.origW, height: d.origH }],
+          after: [{ idx: selImg, x: el.x, y: el.y, width: el.width, height: el.height }],
         })
         redoStackRef.current = []
         scheduleSave()
@@ -1397,7 +1476,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
 
     scheduleSave()
     updateCounts()
-  }, [tool, smoothing, lassoPath, selectedIndices, selectedImage])
+  }, [tool, smoothing, lassoPath, selectedIndices])
 
   // ── Undo / Redo ──
   const handleUndo = useCallback(() => {
@@ -1682,11 +1761,42 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     updateCounts()
   }
 
-  // ── Paste handler (for images) ──
+  // ── Keyboard handler (Delete, paste) ──
   useEffect(() => {
     const wrapper = wrapperRef.current
     if (!wrapper) return
+
+    const handleKeyDown = (e) => {
+      if (editingText) return // don't intercept text editing
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        // Delete selected image
+        const selImg = selectedImageRef.current
+        if (selImg !== null) {
+          e.preventDefault()
+          const el = elementsRef.current[selImg]
+          if (el) {
+            elementsRef.current.splice(selImg, 1)
+            undoStackRef.current.push({ type: 'deleteSelected', items: [{ idx: selImg, el }] })
+            redoStackRef.current = []
+            setSelectedImage(null)
+            redrawAll()
+            scheduleSave()
+            updateCounts()
+          }
+          return
+        }
+        // Delete lasso selection
+        const selIdx = selectedIndicesRef.current
+        if (selIdx && selIdx.size > 0) {
+          e.preventDefault()
+          handleSelDelete()
+          return
+        }
+      }
+    }
+
     const handlePaste = async (e) => {
+      if (editingText) return
       const items = e.clipboardData?.items
       if (!items) return
       for (const item of items) {
@@ -1700,23 +1810,17 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
         }
       }
     }
-    // Right-click context menu: paste image from clipboard
-    const handleContextMenu = async (e) => {
-      e.preventDefault()
-      const result = await readClipboardImage()
-      if (result) {
-        insertImageAtCenter(result.dataUrl, result.width, result.height)
-      }
-    }
-    wrapper.addEventListener('paste', handlePaste)
-    wrapper.addEventListener('contextmenu', handleContextMenu)
-    // Make wrapper focusable for paste
+
+    // Don't prevent default on contextmenu — let the native menu show (with Paste option on iPad)
+    wrapper.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('paste', handlePaste)
+    // Make wrapper focusable for keyboard events
     if (!wrapper.getAttribute('tabindex')) wrapper.setAttribute('tabindex', '-1')
     return () => {
-      wrapper.removeEventListener('paste', handlePaste)
-      wrapper.removeEventListener('contextmenu', handleContextMenu)
+      wrapper.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('paste', handlePaste)
     }
-  }, [lessonId])
+  }, [lessonId, editingText])
 
   // ── Export ──
   function exportAsPNG() {
@@ -1822,6 +1926,10 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     }
     if (tool !== 'image' && tool !== 'cursor') {
       setSelectedImage(null)
+    }
+    // Auto-open file picker when image tool is selected
+    if (tool === 'image') {
+      fileInputRef.current?.click()
     }
     redrawAll()
   }, [tool])
