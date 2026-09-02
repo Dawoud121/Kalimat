@@ -8,7 +8,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#ffffff" />
+    <meta name="theme-color" content="#faf9f6" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -24,6 +24,13 @@
           navigator.serviceWorker.register('/sw.js').catch(() => {})
         })
       }
+      // Sync theme-color meta tag with active theme
+      function syncThemeColor() {
+        var isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', isDark ? '#1e1e1e' : '#faf9f6')
+      }
+      new MutationObserver(syncThemeColor).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+      syncThemeColor()
     </script>
   </body>
 </html>
