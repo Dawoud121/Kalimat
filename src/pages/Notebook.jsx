@@ -5,14 +5,11 @@ import {
   getNotebookClasses, createNotebookClass, updateNotebookClass, deleteNotebookClass,
   getNotebookLessons, createNotebookLesson, updateNotebookLesson, deleteNotebookLesson,
   getNotebookStrokes, updateLessonTemplate,
-  recognizeHandwriting, lookupWordInDictionary, createWord,
-  getUserDecks,
 } from '../lib/dataService'
 import NotebookCanvas from '../components/notebook/NotebookCanvas'
-import ModalPortal from '../components/ModalPortal'
 import {
   ChevronDown, ChevronRight, Plus, Pencil, Trash2, BookOpen, FileText, MoreVertical, X,
-  PanelLeftOpen, PanelLeftClose, ScanSearch, Loader2, BookPlus, Check, ExternalLink,
+  PanelLeftOpen, PanelLeftClose,
 } from 'lucide-react'
 
 const TEMPLATES = [
@@ -36,14 +33,6 @@ export default function Notebook() {
 
   // Sidebar collapse
   const [sidebarOpen, setSidebarOpen] = useState(true)
-
-  // Word detection
-  const [detecting, setDetecting] = useState(false)
-  const [detectedWords, setDetectedWords] = useState(null) // array of { arabic, dictEntry, added }
-  const [showWordPanel, setShowWordPanel] = useState(false)
-  const [userDecks, setUserDecks] = useState(null)
-  const [selectedDeckId, setSelectedDeckId] = useState(null)
-  const [addingWord, setAddingWord] = useState(null) // index being added
 
   // CRUD modals
   const [showNewClass, setShowNewClass] = useState(false)
@@ -223,94 +212,6 @@ export default function Notebook() {
       }
     } catch (err) { console.error(err) }
     setMenuOpen(null)
-  }
-
-  // ── Detect Words ──
-  const handleDetectWords = async () => {
-    if (!canvasRef.current) return
-    setDetecting(true)
-    setDetectedWords(null)
-    try {
-      const base64 = canvasRef.current.getCanvasImage()
-      const res = await recognizeHandwriting(base64)
-      if (res.error) { alert(res.error); setDetecting(false); return }
-      const rawText = res.text || ''
-      // Split into unique Arabic words (remove diacritics for matching, keep original)
-      const arabicRegex = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]+/g
-      const rawWords = rawText.match(arabicRegex) || []
-      // Deduplicate
-      const seen = new Set()
-      const unique = []
-      for (const w of rawWords) {
-        const key = w.replace(/[\u064B-\u065F\u0670]/g, '') // strip tashkeel for dedup
-        if (!seen.has(key)) { seen.add(key); unique.push(w) }
-      }
-      // Look up each word in dictionary
-      const results = await Promise.all(unique.map(async (arabic) => {
-        try {
-          const dictEntry = await lookupWordInDictionary(arabic)
-          return { arabic, dictEntry, added: false }
-        } catch {
-          return { arabic, dictEntry: null, added: false }
-        }
-      }))
-      setDetectedWords(results)
-      setShowWordPanel(true)
-      // Load user decks for the "add to deck" dropdown
-      if (!userDecks) {
-        try {
-          const decks = await getUserDecks(currentUser.id)
-          setUserDecks(decks)
-          if (decks.length > 0) setSelectedDeckId(decks[0].id)
-        } catch { /* ignore */ }
-      }
-    } catch (err) {
-      alert('Word detection failed: ' + (err.message || 'Unknown error'))
-    }
-    setDetecting(false)
-  }
-
-  const handleAddWordToDeck = async (wordIndex) => {
-    if (!selectedDeckId || !detectedWords) return
-    const word = detectedWords[wordIndex]
-    if (word.added) return
-    setAddingWord(wordIndex)
-    try {
-      await createWord(currentUser.id, {
-        deckId: selectedDeckId,
-        arabic: word.arabic,
-        english: word.dictEntry?.definition || '',
-        root: word.dictEntry?.root || '',
-        partOfSpeech: word.dictEntry?.pos || '',
-      })
-      setDetectedWords(prev => prev.map((w, i) => i === wordIndex ? { ...w, added: true } : w))
-    } catch (err) {
-      alert('Failed to add word: ' + (err.message || 'Unknown error'))
-    }
-    setAddingWord(null)
-  }
-
-  const handleAddAllWords = async () => {
-    if (!selectedDeckId || !detectedWords) return
-    const unadded = detectedWords.filter(w => !w.added)
-    if (unadded.length === 0) return
-    setAddingWord(-1) // indicate bulk adding
-    try {
-      for (let i = 0; i < detectedWords.length; i++) {
-        if (detectedWords[i].added) continue
-        await createWord(currentUser.id, {
-          deckId: selectedDeckId,
-          arabic: detectedWords[i].arabic,
-          english: detectedWords[i].dictEntry?.definition || '',
-          root: detectedWords[i].dictEntry?.root || '',
-          partOfSpeech: detectedWords[i].dictEntry?.pos || '',
-        })
-        setDetectedWords(prev => prev.map((w, j) => j === i ? { ...w, added: true } : w))
-      }
-    } catch (err) {
-      alert('Failed to add some words: ' + (err.message || 'Unknown error'))
-    }
-    setAddingWord(null)
   }
 
   // Close menus on outside click
@@ -510,17 +411,6 @@ export default function Notebook() {
                 <span className="notebook-lesson-header-date">{selectedLesson.date}</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {/* Detect Words */}
-                <button
-                  className="notebook-tool-btn"
-                  onClick={handleDetectWords}
-                  disabled={detecting}
-                  title="Detect Arabic words in this note"
-                  style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', padding: '4px 8px' }}
-                >
-                  {detecting ? <Loader2 size={14} className="spin" /> : <ScanSearch size={14} />}
-                  <span>Detect Words</span>
-                </button>
                 {/* Template selector */}
                 <select
                   className="form-input"
@@ -568,115 +458,6 @@ export default function Notebook() {
           </div>
         )}
       </div>
-
-      {/* Word detection results panel */}
-      {showWordPanel && detectedWords && (
-        <ModalPortal>
-          <div className="modal-overlay" onClick={() => setShowWordPanel(false)}>
-            <div className="modal" style={{ maxWidth: 520, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-              <div className="modal-header">
-                <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <ScanSearch size={18} /> Detected Words
-                </h2>
-                <button className="modal-close" onClick={() => setShowWordPanel(false)}><X size={16} /></button>
-              </div>
-
-              {detectedWords.length === 0 ? (
-                <div style={{ padding: 24, textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                  No Arabic words detected. Try writing more clearly or with darker strokes.
-                </div>
-              ) : (
-                <>
-                  {/* Deck selector + Add All */}
-                  <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <label style={{ fontSize: '0.8rem', whiteSpace: 'nowrap', color: 'var(--color-text-muted)' }}>Add to:</label>
-                    <select
-                      className="form-input"
-                      style={{ flex: 1, fontSize: '0.8rem', padding: '4px 8px' }}
-                      value={selectedDeckId || ''}
-                      onChange={e => setSelectedDeckId(Number(e.target.value))}
-                    >
-                      {(userDecks || []).map(d => (
-                        <option key={d.id} value={d.id}>{d.title}</option>
-                      ))}
-                    </select>
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={handleAddAllWords}
-                      disabled={addingWord !== null || detectedWords.every(w => w.added)}
-                      style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}
-                    >
-                      {addingWord === -1 ? <Loader2 size={13} className="spin" /> : <BookPlus size={13} />}
-                      Add All
-                    </button>
-                  </div>
-
-                  {/* Word list */}
-                  <div style={{ overflow: 'auto', flex: 1 }}>
-                    {detectedWords.map((word, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 12,
-                          padding: '10px 16px',
-                          borderBottom: '1px solid var(--color-border)',
-                          opacity: word.added ? 0.6 : 1,
-                        }}
-                      >
-                        {/* Arabic word */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontFamily: '"Noto Naskh Arabic", serif', fontSize: '1.2rem', direction: 'rtl' }}>
-                            {word.arabic}
-                          </div>
-                          {word.dictEntry ? (
-                            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
-                              {word.dictEntry.root && <span style={{ color: 'var(--color-brand)', marginRight: 6 }}>{word.dictEntry.root}</span>}
-                              {word.dictEntry.pos && <span style={{ marginRight: 6, fontStyle: 'italic' }}>{word.dictEntry.pos}</span>}
-                              {word.dictEntry.definition && (
-                                <span>{word.dictEntry.definition.length > 60 ? word.dictEntry.definition.slice(0, 60) + '…' : word.dictEntry.definition}</span>
-                              )}
-                            </div>
-                          ) : (
-                            <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', fontStyle: 'italic', marginTop: 2 }}>
-                              Not in dictionary
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Add button */}
-                        {word.added ? (
-                          <span style={{ color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem' }}>
-                            <Check size={14} /> Added
-                          </span>
-                        ) : (
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => handleAddWordToDeck(i)}
-                            disabled={addingWord !== null || !selectedDeckId}
-                            title="Add to deck"
-                          >
-                            {addingWord === i ? <Loader2 size={14} className="spin" /> : <BookPlus size={14} />}
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-
-                  <div style={{ padding: '10px 16px', fontSize: '0.8rem', color: 'var(--color-text-muted)', borderTop: '1px solid var(--color-border)' }}>
-                    {detectedWords.length} word{detectedWords.length !== 1 ? 's' : ''} detected
-                    {detectedWords.filter(w => w.dictEntry).length > 0 && (
-                      <> · {detectedWords.filter(w => w.dictEntry).length} found in dictionary</>
-                    )}
-                    {detectedWords.filter(w => w.added).length > 0 && (
-                      <> · {detectedWords.filter(w => w.added).length} added</>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </ModalPortal>
-      )}
 
     </div>
   )

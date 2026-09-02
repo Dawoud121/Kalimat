@@ -930,6 +930,3 @@ export async function deleteNotebookImage(imageId) {
   return api.del(`/notebook/images/${imageId}`)
 }
 
-export async function recognizeHandwriting(imageBase64) {
-  return api.post('/notebook/recognize', { image: imageBase64 })
-}

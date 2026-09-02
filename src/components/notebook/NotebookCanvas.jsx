@@ -10,7 +10,7 @@ const LINE_COLOR = '#d0d8e0'
 const LINE_COLOR_DARK = '#2a2f36'
 const GRID_COLOR = '#d0d8e0'
 const GRID_COLOR_DARK = '#2a2f36'
-const MIN_ZOOM = 0.3
+const MIN_ZOOM = 0.8
 const MAX_ZOOM = 5
 const PAGE_PADDING_BOTTOM = 600 // blank space below last element
 const PAGE_BG = '#faf9f6'
@@ -285,18 +285,6 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   useImperativeHandle(ref, () => ({
     save: () => saveNow(),
     isDirty: () => isDirtyRef.current,
-    getCanvasImage: () => {
-      const pageBottom = getPageBottom()
-      const offscreen = document.createElement('canvas')
-      offscreen.width = EXPORT_WIDTH * 2
-      offscreen.height = pageBottom * 2
-      const ctx = offscreen.getContext('2d')
-      ctx.scale(2, 2)
-      ctx.fillStyle = '#ffffff'
-      ctx.fillRect(0, 0, EXPORT_WIDTH, pageBottom)
-      elementsRef.current.forEach(el => drawElement(ctx, el, imageCacheRef.current))
-      return offscreen.toDataURL('image/png').split(',')[1]
-    },
     exportAsPNG,
     exportAsPDF,
   }))
