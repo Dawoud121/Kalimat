@@ -1,6 +1,6 @@
 // v2.9.0
 import React, { useState } from 'react'
-import { Pen, Highlighter, Eraser, Undo2, Redo2, Trash2, Lasso, Type, ImagePlus, Spline, Download } from 'lucide-react'
+import { Pen, Highlighter, Eraser, Undo2, Redo2, Trash2, Lasso, Type, ImagePlus, Spline, Download, Sparkles } from 'lucide-react'
 
 const COLORS = [
   { value: '#000000', label: 'Black' },
@@ -26,6 +26,7 @@ export default function NotebookToolbar({
   canUndo, canRedo, onUndo, onRedo,
   onClear,
   onExportPNG, onExportPDF,
+  onAnalyze, analyzing,
 }) {
   const [exportOpen, setExportOpen] = useState(false)
 
@@ -136,6 +137,18 @@ export default function NotebookToolbar({
         </button>
         <button className="notebook-tool-btn notebook-tool-btn-danger" onClick={onClear} title="Clear all">
           <Trash2 size={16} />
+        </button>
+      </div>
+
+      <div className="notebook-toolbar-divider" />
+      <div className="notebook-toolbar-group">
+        <button
+          className={`notebook-tool-btn notebook-analyze-btn${analyzing ? ' analyzing' : ''}`}
+          onClick={onAnalyze}
+          disabled={analyzing}
+          title="Analyze with AI"
+        >
+          <Sparkles size={16} />
         </button>
       </div>
 

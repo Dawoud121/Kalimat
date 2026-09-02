@@ -230,7 +230,7 @@ function compressImage(file, maxDim = 800, quality = 0.7) {
 // ── Main Component ──
 const SNAP_DISTANCE = 10
 
-const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStrokes, template = 'arabic' }, ref) {
+const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStrokes, template = 'arabic', onAnalyze, analyzing }, ref) {
   const staticCanvasRef = useRef(null)
   const activeCanvasRef = useRef(null)
   const linesCanvasRef = useRef(null)
@@ -287,6 +287,20 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     isDirty: () => isDirtyRef.current,
     exportAsPNG,
     exportAsPDF,
+    getCanvasImage: () => {
+      const pageBottom = getPageBottom()
+      const w = wrapperRef.current?.clientWidth || EXPORT_WIDTH
+      const offscreen = document.createElement('canvas')
+      offscreen.width = w * 2
+      offscreen.height = pageBottom * 2
+      const ctx = offscreen.getContext('2d')
+      ctx.scale(2, 2)
+      ctx.fillStyle = getIsDark() ? PAGE_BG_DARK : PAGE_BG
+      ctx.fillRect(0, 0, w, pageBottom)
+      drawTemplateOnExport(ctx, w, pageBottom)
+      elementsRef.current.forEach(el => drawElement(ctx, el, imageCacheRef.current))
+      return offscreen.toDataURL('image/png')
+    },
   }))
 
   // ── Get page bottom (dynamic based on content) ──
@@ -1612,6 +1626,8 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
         onClear={handleClear}
         onExportPNG={exportAsPNG}
         onExportPDF={exportAsPDF}
+        onAnalyze={onAnalyze}
+        analyzing={analyzing}
       />
       <div ref={wrapperRef} className="notebook-canvas-wrapper" tabIndex={-1}>
         <canvas ref={linesCanvasRef} className="notebook-canvas" />

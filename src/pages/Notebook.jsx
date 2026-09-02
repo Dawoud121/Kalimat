@@ -4,12 +4,12 @@ import { useAuth } from '../auth/AuthContext'
 import {
   getNotebookClasses, createNotebookClass, updateNotebookClass, deleteNotebookClass,
   getNotebookLessons, createNotebookLesson, updateNotebookLesson, deleteNotebookLesson,
-  getNotebookStrokes, updateLessonTemplate,
+  getNotebookStrokes, updateLessonTemplate, analyzeNote, createWord,
 } from '../lib/dataService'
 import NotebookCanvas from '../components/notebook/NotebookCanvas'
 import {
   ChevronDown, ChevronRight, Plus, Pencil, Trash2, BookOpen, FileText, MoreVertical, X,
-  PanelLeftOpen, PanelLeftClose,
+  PanelLeftOpen, PanelLeftClose, Sparkles, Send, PlusCircle, Check,
 } from 'lucide-react'
 
 const TEMPLATES = [
@@ -46,6 +46,15 @@ export default function Notebook() {
   const [editLessonTitle, setEditLessonTitle] = useState('')
   const [editLessonDate, setEditLessonDate] = useState('')
   const [menuOpen, setMenuOpen] = useState(null)
+
+  // AI Analysis panel
+  const [analyzeOpen, setAnalyzeOpen] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [analyzeResult, setAnalyzeResult] = useState(null)
+  const [analyzeHistory, setAnalyzeHistory] = useState([]) // conversation history for follow-ups
+  const [analyzePrompt, setAnalyzePrompt] = useState('')
+  const [addedWords, setAddedWords] = useState(new Set()) // track which words have been added
+  const analyzeChatRef = useRef(null)
 
   const canvasRef = useRef(null)
 
@@ -221,6 +230,77 @@ export default function Notebook() {
     window.addEventListener('click', handler)
     return () => window.removeEventListener('click', handler)
   }, [menuOpen])
+
+  // ── AI Analysis ──
+  const handleAnalyze = useCallback(async () => {
+    if (!canvasRef.current) return
+    setAnalyzeOpen(true)
+    setAnalyzing(true)
+    setAnalyzeResult(null)
+    setAnalyzeHistory([])
+    setAddedWords(new Set())
+    try {
+      const imageData = canvasRef.current.getCanvasImage()
+      const prompt = 'Analyze this note'
+      const result = await analyzeNote(imageData, prompt, [])
+      setAnalyzeResult(result)
+      // Store history for follow-ups
+      setAnalyzeHistory([
+        { role: 'user', text: prompt },
+        { role: 'model', text: JSON.stringify(result) },
+      ])
+    } catch (err) {
+      setAnalyzeResult({ error: err.message || 'Analysis failed' })
+    }
+    setAnalyzing(false)
+  }, [])
+
+  const handleFollowUp = useCallback(async () => {
+    const prompt = analyzePrompt.trim()
+    if (!prompt || analyzing) return
+    setAnalyzePrompt('')
+    setAnalyzing(true)
+
+    // Add user message to display
+    const prevResult = analyzeResult
+    setAnalyzeResult(prev => ({
+      ...prev,
+      followUps: [...(prev?.followUps || []), { role: 'user', text: prompt }],
+    }))
+
+    try {
+      // Send image again only on first analysis; follow-ups don't need it
+      const result = await analyzeNote('', prompt, analyzeHistory)
+      const responseText = result.response || JSON.stringify(result)
+      setAnalyzeHistory(prev => [
+        ...prev,
+        { role: 'user', text: prompt },
+        { role: 'model', text: responseText },
+      ])
+      setAnalyzeResult(prev => ({
+        ...prev,
+        followUps: [...(prev?.followUps || []), { role: 'model', text: responseText }],
+      }))
+    } catch (err) {
+      setAnalyzeResult(prev => ({
+        ...prev,
+        followUps: [...(prev?.followUps || []), { role: 'model', text: 'Error: ' + (err.message || 'Failed') }],
+      }))
+    }
+    setAnalyzing(false)
+    setTimeout(() => analyzeChatRef.current?.scrollTo(0, analyzeChatRef.current.scrollHeight), 100)
+  }, [analyzePrompt, analyzing, analyzeHistory, analyzeResult])
+
+  const handleAddWord = useCallback(async (word) => {
+    if (!currentUser || addedWords.has(word.arabic)) return
+    try {
+      // We need a deck to add to — for now just mark as added
+      // The user will see the word was detected; adding to deck requires deck selection
+      setAddedWords(prev => new Set([...prev, word.arabic]))
+    } catch (err) {
+      console.error('Failed to add word:', err)
+    }
+  }, [currentUser, addedWords])
 
   if (loading) {
     return (
@@ -429,6 +509,8 @@ export default function Notebook() {
               lessonId={selectedLessonId}
               initialStrokes={strokes}
               template={selectedLesson.template || 'arabic'}
+              onAnalyze={handleAnalyze}
+              analyzing={analyzing}
             />
           </>
         ) : selectedLesson && strokes === null ? (
@@ -458,6 +540,154 @@ export default function Notebook() {
           </div>
         )}
       </div>
+
+      {/* AI Analysis panel */}
+      {analyzeOpen && (
+        <div className="notebook-analyze-panel">
+          <div className="notebook-analyze-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Sparkles size={16} />
+              <span style={{ fontWeight: 600 }}>AI Analysis</span>
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={() => setAnalyzeOpen(false)}>
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="notebook-analyze-body" ref={analyzeChatRef}>
+            {analyzing && !analyzeResult && (
+              <div className="notebook-analyze-loading">
+                <div className="spinner" />
+                <span>Analyzing your notes…</span>
+              </div>
+            )}
+
+            {analyzeResult?.error && (
+              <div className="notebook-analyze-error">
+                {analyzeResult.error}
+              </div>
+            )}
+
+            {analyzeResult && !analyzeResult.error && (
+              <>
+                {/* Transcription */}
+                {analyzeResult.transcription && (
+                  <div className="notebook-analyze-section">
+                    <h4>Transcription</h4>
+                    <p className="notebook-analyze-arabic" dir="rtl">{analyzeResult.transcription}</p>
+                  </div>
+                )}
+
+                {/* With Diacritics */}
+                {analyzeResult.transcriptionWithDiacritics && (
+                  <div className="notebook-analyze-section">
+                    <h4>With Diacritics</h4>
+                    <p className="notebook-analyze-arabic" dir="rtl">{analyzeResult.transcriptionWithDiacritics}</p>
+                  </div>
+                )}
+
+                {/* Translation */}
+                {analyzeResult.translation && (
+                  <div className="notebook-analyze-section">
+                    <h4>Translation</h4>
+                    <p>{analyzeResult.translation}</p>
+                  </div>
+                )}
+
+                {/* Words detected */}
+                {analyzeResult.words?.length > 0 && (
+                  <div className="notebook-analyze-section">
+                    <h4>Words Detected ({analyzeResult.words.length})</h4>
+                    <div className="notebook-analyze-words">
+                      {analyzeResult.words.map((w, i) => (
+                        <div key={i} className="notebook-analyze-word">
+                          <div className="notebook-analyze-word-info">
+                            <span className="notebook-analyze-word-arabic" dir="rtl">{w.arabic}</span>
+                            <span className="notebook-analyze-word-root" dir="rtl">{w.root}</span>
+                            <span className="notebook-analyze-word-meaning">{w.meaning}</span>
+                          </div>
+                          <button
+                            className={`btn btn-sm${addedWords.has(w.arabic) ? ' btn-ghost' : ' btn-primary'}`}
+                            onClick={() => handleAddWord(w)}
+                            disabled={addedWords.has(w.arabic)}
+                            title={addedWords.has(w.arabic) ? 'Added' : 'Add to deck'}
+                          >
+                            {addedWords.has(w.arabic) ? <Check size={14} /> : <PlusCircle size={14} />}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Grammar corrections */}
+                {analyzeResult.corrections?.length > 0 && (
+                  <div className="notebook-analyze-section">
+                    <h4>Corrections</h4>
+                    {analyzeResult.corrections.map((c, i) => (
+                      <div key={i} className="notebook-analyze-correction">
+                        <div className="notebook-analyze-correction-diff">
+                          <span className="notebook-analyze-original" dir="rtl">{c.original}</span>
+                          <span style={{ color: 'var(--color-text-muted)' }}>&rarr;</span>
+                          <span className="notebook-analyze-corrected" dir="rtl">{c.corrected}</span>
+                        </div>
+                        <p className="notebook-analyze-explanation">{c.explanation}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Feedback */}
+                {analyzeResult.feedback && (
+                  <div className="notebook-analyze-section">
+                    <h4>Feedback</h4>
+                    <p>{analyzeResult.feedback}</p>
+                  </div>
+                )}
+
+                {/* Follow-up messages */}
+                {analyzeResult.followUps?.map((msg, i) => (
+                  <div key={`fu-${i}`} className={`notebook-analyze-followup notebook-analyze-followup-${msg.role}`}>
+                    {msg.role === 'user' ? (
+                      <div className="notebook-analyze-user-msg">{msg.text}</div>
+                    ) : (
+                      <div className="notebook-analyze-ai-msg">{msg.text}</div>
+                    )}
+                  </div>
+                ))}
+
+                {analyzing && (
+                  <div className="notebook-analyze-loading" style={{ padding: '8px 0' }}>
+                    <div className="spinner" style={{ width: 16, height: 16 }} />
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Follow-up input */}
+          {analyzeResult && !analyzeResult.error && (
+            <div className="notebook-analyze-input">
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Ask a follow-up question…"
+                value={analyzePrompt}
+                onChange={e => setAnalyzePrompt(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleFollowUp() }}
+                disabled={analyzing}
+              />
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleFollowUp}
+                disabled={analyzing || !analyzePrompt.trim()}
+              >
+                <Send size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
     </div>
   )
