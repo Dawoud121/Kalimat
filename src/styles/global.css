@@ -5302,6 +5302,18 @@ input[type="checkbox"] {
   line-height: 2;
 }
 
+.notebook-analyze-words-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.notebook-analyze-words-header h4 {
+  margin: 0;
+}
+
 .notebook-analyze-words {
   display: flex;
   flex-direction: column;
@@ -5415,8 +5427,39 @@ input[type="checkbox"] {
   font-size: 0.85rem;
 }
 
+.notebook-analyze-markdown {
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+
+.notebook-analyze-markdown ul {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.notebook-analyze-markdown li {
+  margin-bottom: 4px;
+}
+
+.notebook-analyze-markdown code {
+  font-family: 'Noto Naskh Arabic', serif;
+  background: var(--color-bg);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 1em;
+}
+
+.notebook-analyze-markdown strong {
+  color: var(--color-text);
+}
+
 .notebook-analyze-btn {
   color: var(--color-brand);
+}
+
+.notebook-analyze-btn.has-results {
+  color: var(--color-brand);
+  background: var(--color-brand-muted);
 }
 
 .notebook-analyze-btn.analyzing {
