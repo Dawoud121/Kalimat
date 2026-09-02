@@ -4,13 +4,26 @@ import { useAuth } from '../auth/AuthContext'
 import {
   getNotebookClasses, createNotebookClass, updateNotebookClass, deleteNotebookClass,
   getNotebookLessons, createNotebookLesson, updateNotebookLesson, deleteNotebookLesson,
-  getNotebookStrokes, updateLessonTemplate, analyzeNote, createWord,
+  getNotebookStrokes, updateLessonTemplate, analyzeNote, createWord, getUserDecks,
 } from '../lib/dataService'
 import NotebookCanvas from '../components/notebook/NotebookCanvas'
 import {
   ChevronDown, ChevronRight, Plus, Pencil, Trash2, BookOpen, FileText, MoreVertical, X,
   PanelLeftOpen, PanelLeftClose, Sparkles, Send, PlusCircle, Check,
 } from 'lucide-react'
+
+// Simple markdown to HTML (bold, italic, lists, line breaks)
+function renderMarkdown(text) {
+  if (!text) return ''
+  return text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') // escape HTML
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`(.+?)`/g, '<code>$1</code>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+    .replace(/\n/g, '<br>')
+}
 
 const TEMPLATES = [
   { value: 'lined', label: 'Lined' },
@@ -54,6 +67,8 @@ export default function Notebook() {
   const [analyzeHistory, setAnalyzeHistory] = useState([]) // conversation history for follow-ups
   const [analyzePrompt, setAnalyzePrompt] = useState('')
   const [addedWords, setAddedWords] = useState(new Set()) // track which words have been added
+  const [userDecks, setUserDecks] = useState([])
+  const [selectedDeckId, setSelectedDeckId] = useState(null)
   const analyzeChatRef = useRef(null)
 
   const canvasRef = useRef(null)
@@ -249,12 +264,17 @@ export default function Notebook() {
     setAnalyzeResult(null)
     setAnalyzeHistory([])
     setAddedWords(new Set())
+    // Load user decks for "add to deck" feature
+    try {
+      const decks = await getUserDecks(currentUser.id)
+      setUserDecks(decks)
+      if (decks.length > 0 && !selectedDeckId) setSelectedDeckId(decks[0].id)
+    } catch { /* ignore */ }
     try {
       const imageData = canvasRef.current.getCanvasImage()
       const prompt = 'Analyze this note'
       const result = await analyzeNote(imageData, prompt, [])
       setAnalyzeResult(result)
-      // Store history for follow-ups
       setAnalyzeHistory([
         { role: 'user', text: prompt },
         { role: 'model', text: JSON.stringify(result) },
@@ -263,7 +283,7 @@ export default function Notebook() {
       setAnalyzeResult({ error: err.message || 'Analysis failed' })
     }
     setAnalyzing(false)
-  }, [analyzeResult])
+  }, [analyzeResult, currentUser, selectedDeckId])
 
   const handleFollowUp = useCallback(async () => {
     const prompt = analyzePrompt.trim()
@@ -271,15 +291,12 @@ export default function Notebook() {
     setAnalyzePrompt('')
     setAnalyzing(true)
 
-    // Add user message to display
-    const prevResult = analyzeResult
     setAnalyzeResult(prev => ({
       ...prev,
       followUps: [...(prev?.followUps || []), { role: 'user', text: prompt }],
     }))
 
     try {
-      // Send image again only on first analysis; follow-ups don't need it
       const result = await analyzeNote('', prompt, analyzeHistory)
       const responseText = result.response || JSON.stringify(result)
       setAnalyzeHistory(prev => [
@@ -299,18 +316,22 @@ export default function Notebook() {
     }
     setAnalyzing(false)
     setTimeout(() => analyzeChatRef.current?.scrollTo(0, analyzeChatRef.current.scrollHeight), 100)
-  }, [analyzePrompt, analyzing, analyzeHistory, analyzeResult])
+  }, [analyzePrompt, analyzing, analyzeHistory])
 
   const handleAddWord = useCallback(async (word) => {
-    if (!currentUser || addedWords.has(word.arabic)) return
+    if (!currentUser || !selectedDeckId || addedWords.has(word.arabic)) return
     try {
-      // We need a deck to add to — for now just mark as added
-      // The user will see the word was detected; adding to deck requires deck selection
+      await createWord(currentUser.id, {
+        deckId: selectedDeckId,
+        arabic: word.arabic,
+        english: word.meaning,
+        root: (word.root || '').replace(/\s/g, ''),
+      })
       setAddedWords(prev => new Set([...prev, word.arabic]))
     } catch (err) {
       console.error('Failed to add word:', err)
     }
-  }, [currentUser, addedWords])
+  }, [currentUser, selectedDeckId, addedWords])
 
   if (loading) {
     return (
@@ -581,19 +602,11 @@ export default function Notebook() {
 
             {analyzeResult && !analyzeResult.error && (
               <>
-                {/* Transcription */}
-                {analyzeResult.transcription && (
+                {/* Diacritics */}
+                {analyzeResult.diacritics && (
                   <div className="notebook-analyze-section">
-                    <h4>Transcription</h4>
-                    <p className="notebook-analyze-arabic" dir="rtl">{analyzeResult.transcription}</p>
-                  </div>
-                )}
-
-                {/* With Diacritics */}
-                {analyzeResult.transcriptionWithDiacritics && (
-                  <div className="notebook-analyze-section">
-                    <h4>With Diacritics</h4>
-                    <p className="notebook-analyze-arabic" dir="rtl">{analyzeResult.transcriptionWithDiacritics}</p>
+                    <h4>With Harakat</h4>
+                    <p className="notebook-analyze-arabic" dir="rtl">{analyzeResult.diacritics}</p>
                   </div>
                 )}
 
@@ -608,7 +621,21 @@ export default function Notebook() {
                 {/* Words detected */}
                 {analyzeResult.words?.length > 0 && (
                   <div className="notebook-analyze-section">
-                    <h4>Words Detected ({analyzeResult.words.length})</h4>
+                    <div className="notebook-analyze-words-header">
+                      <h4>Words ({analyzeResult.words.length})</h4>
+                      {userDecks.length > 0 && (
+                        <select
+                          className="form-input"
+                          style={{ fontSize: '0.75rem', padding: '2px 6px', width: 'auto', maxWidth: 160 }}
+                          value={selectedDeckId || ''}
+                          onChange={e => setSelectedDeckId(Number(e.target.value))}
+                        >
+                          {userDecks.map(d => (
+                            <option key={d.id} value={d.id}>{d.title}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
                     <div className="notebook-analyze-words">
                       {analyzeResult.words.map((w, i) => (
                         <div key={i} className="notebook-analyze-word">
@@ -620,7 +647,7 @@ export default function Notebook() {
                           <button
                             className={`btn btn-sm${addedWords.has(w.arabic) ? ' btn-ghost' : ' btn-primary'}`}
                             onClick={() => handleAddWord(w)}
-                            disabled={addedWords.has(w.arabic)}
+                            disabled={addedWords.has(w.arabic) || !selectedDeckId}
                             title={addedWords.has(w.arabic) ? 'Added' : 'Add to deck'}
                           >
                             {addedWords.has(w.arabic) ? <Check size={14} /> : <PlusCircle size={14} />}
@@ -631,28 +658,11 @@ export default function Notebook() {
                   </div>
                 )}
 
-                {/* Grammar corrections */}
-                {analyzeResult.corrections?.length > 0 && (
+                {/* Free-form analysis */}
+                {analyzeResult.analysis && (
                   <div className="notebook-analyze-section">
-                    <h4>Corrections</h4>
-                    {analyzeResult.corrections.map((c, i) => (
-                      <div key={i} className="notebook-analyze-correction">
-                        <div className="notebook-analyze-correction-diff">
-                          <span className="notebook-analyze-original" dir="rtl">{c.original}</span>
-                          <span style={{ color: 'var(--color-text-muted)' }}>&rarr;</span>
-                          <span className="notebook-analyze-corrected" dir="rtl">{c.corrected}</span>
-                        </div>
-                        <p className="notebook-analyze-explanation">{c.explanation}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Feedback */}
-                {analyzeResult.feedback && (
-                  <div className="notebook-analyze-section">
-                    <h4>Feedback</h4>
-                    <p>{analyzeResult.feedback}</p>
+                    <h4>Analysis</h4>
+                    <div className="notebook-analyze-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(analyzeResult.analysis) }} />
                   </div>
                 )}
 
@@ -662,7 +672,7 @@ export default function Notebook() {
                     {msg.role === 'user' ? (
                       <div className="notebook-analyze-user-msg">{msg.text}</div>
                     ) : (
-                      <div className="notebook-analyze-ai-msg">{msg.text}</div>
+                      <div className="notebook-analyze-ai-msg" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }} />
                     )}
                   </div>
                 ))}
