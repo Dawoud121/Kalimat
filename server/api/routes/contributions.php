@@ -75,13 +75,26 @@ if ($method === 'POST' && $path === '/contributions') {
     // Duplicate detection for new_word
     if (($body['type'] ?? '') === 'new_word' && !empty($body['arabic'])) {
         $normalized = strip_arabic_diacritics(trim($body['arabic']));
-        $stmt = $pdo->prepare("SELECT id, arabic FROM contributions WHERE type = 'new_word' AND status = 'pending'");
-        $stmt->execute();
-        foreach ($stmt->fetchAll() as $c) {
-            if (strip_arabic_diacritics($c['arabic']) === $normalized) {
-                // Vote on existing instead of creating duplicate
-                _do_vote($pdo, $config, $payload['sub'], (int)$c['id'], 1);
-                json_response(['isDuplicate' => true, 'existingId' => (int)$c['id']]);
+        $source = $body['source'] ?? 'user';
+
+        if ($source === 'gemini') {
+            // For gemini auto-logged words, silently skip if already exists (any status)
+            $stmt = $pdo->prepare("SELECT id, arabic FROM contributions WHERE type = 'new_word' AND source = 'gemini'");
+            $stmt->execute();
+            foreach ($stmt->fetchAll() as $c) {
+                if (strip_arabic_diacritics($c['arabic']) === $normalized) {
+                    json_response(['isDuplicate' => true, 'existingId' => (int)$c['id']]);
+                }
+            }
+        } else {
+            // For user submissions, check pending and auto-vote
+            $stmt = $pdo->prepare("SELECT id, arabic FROM contributions WHERE type = 'new_word' AND status = 'pending'");
+            $stmt->execute();
+            foreach ($stmt->fetchAll() as $c) {
+                if (strip_arabic_diacritics($c['arabic']) === $normalized) {
+                    _do_vote($pdo, $config, $payload['sub'], (int)$c['id'], 1);
+                    json_response(['isDuplicate' => true, 'existingId' => (int)$c['id']]);
+                }
             }
         }
     }
@@ -221,6 +234,21 @@ if ($method === 'POST' && preg_match('#^/contributions/(\d+)/moderate$#', $path,
     }
 
     json_response($contrib);
+}
+
+// DELETE /contributions/:id — admin delete contribution
+if ($method === 'DELETE' && preg_match('#^/contributions/(\d+)$#', $path, $m)) {
+    $payload = require_admin($config);
+    $contribId = (int)$m[1];
+
+    // Delete votes first (foreign key)
+    $pdo->prepare('DELETE FROM contribution_votes WHERE contribution_id = ?')->execute([$contribId]);
+    // Delete audit logs
+    $pdo->prepare('DELETE FROM contribution_audit WHERE contribution_id = ?')->execute([$contribId]);
+    // Delete the contribution
+    $pdo->prepare('DELETE FROM contributions WHERE id = ?')->execute([$contribId]);
+
+    json_response(['deleted' => true]);
 }
 
 // ── Helpers ──
