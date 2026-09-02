@@ -1,4 +1,4 @@
-// v2.9.0
+// v2.9.1
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import {
@@ -10,7 +10,7 @@ import {
 import NotebookCanvas from '../components/notebook/NotebookCanvas'
 import {
   ChevronDown, ChevronRight, Plus, Pencil, Trash2, BookOpen, FileText, MoreVertical, X,
-  PanelLeftOpen, PanelLeftClose, Sparkles, Send, PlusCircle, Check, RefreshCw,
+  PanelLeftOpen, PanelLeftClose, Sparkles, Send, PlusCircle, Check, RefreshCw, MessageCircleQuestion,
 } from 'lucide-react'
 
 // Simple markdown to HTML (bold, italic, lists, line breaks)
@@ -290,13 +290,44 @@ export default function Notebook() {
   }, [menuOpen])
 
   // ── AI Analysis ──
-  const runAnalysis = useCallback(async () => {
+  const autoLogWords = useCallback(async (words) => {
+    if (!currentUser || !words?.length) return
+    for (const w of words) {
+      try {
+        await submitContribution(currentUser.id, currentUser.username, {
+          type: 'new_word',
+          arabic: w.arabic,
+          definition: w.meaning,
+          root: (w.root || '').replace(/\s/g, ''),
+          pos: w.partOfSpeech || '',
+          source: 'gemini',
+          status: 'approved',
+        })
+      } catch { /* ignore duplicates / errors */ }
+    }
+  }, [currentUser])
+
+  const runAnalysis = useCallback(async (mode = 'full') => {
     if (!canvasRef.current || !currentUser) return
     setAnalyzeOpen(true)
-    setAnalyzing(true)
-    setAnalyzeResult(null)
     setAnalyzeHistory([])
     setAddedWords(new Set())
+
+    // For "ask" mode, just open the panel with input — don't send yet
+    if (mode === 'ask') {
+      setAnalyzeResult({ _mode: 'ask', _askReady: true })
+      setAnalyzing(false)
+      // Load user decks
+      try {
+        const decks = await getUserDecks(currentUser.id)
+        setUserDecks(decks)
+        if (decks.length > 0 && !selectedDeckId) setSelectedDeckId(decks[0].id)
+      } catch { /* ignore */ }
+      return
+    }
+
+    setAnalyzing(true)
+    setAnalyzeResult(null)
     // Load user decks for "add to deck" feature
     try {
       const decks = await getUserDecks(currentUser.id)
@@ -306,34 +337,38 @@ export default function Notebook() {
     try {
       const imageData = canvasRef.current.getCanvasImage()
       const prompt = 'Analyze this note'
-      const result = await analyzeNote(imageData, prompt, [])
+      const result = await analyzeNote(imageData, prompt, [], mode)
       setAnalyzeResult(result)
       setAnalyzeHistory([
         { role: 'user', text: prompt },
         { role: 'model', text: JSON.stringify(result) },
       ])
+      // Auto-log all detected words to Gemini contributions
+      autoLogWords(result.words)
     } catch (err) {
       setAnalyzeResult({ error: err.message || 'Analysis failed' })
     }
     setAnalyzing(false)
-  }, [currentUser, selectedDeckId])
+  }, [currentUser, selectedDeckId, autoLogWords])
 
-  const handleAnalyze = useCallback(() => {
-    // If we already have results, just toggle the panel
-    if (analyzeResult && !analyzeResult.error) {
+  const handleAnalyze = useCallback((modeOrAction) => {
+    // 'toggle' = just show/hide the panel
+    if (modeOrAction === 'toggle') {
       setAnalyzeOpen(prev => !prev)
       return
     }
-    runAnalysis()
-  }, [analyzeResult, runAnalysis])
+    // Otherwise it's a mode key — run analysis with that mode
+    runAnalysis(modeOrAction || 'full')
+  }, [runAnalysis])
 
   const handleRegenerate = useCallback(() => {
-    // Clear cached analysis and re-run
+    // Clear cached analysis and re-run with same mode
+    const currentMode = analyzeResult?._mode || 'full'
     if (selectedLessonId) {
       localStorage.removeItem(`kalimat_analysis_${selectedLessonId}`)
     }
-    runAnalysis()
-  }, [selectedLessonId, runAnalysis])
+    runAnalysis(currentMode)
+  }, [selectedLessonId, runAnalysis, analyzeResult])
 
   const handleFollowUp = useCallback(async () => {
     const prompt = analyzePrompt.trim()
@@ -341,14 +376,19 @@ export default function Notebook() {
     setAnalyzePrompt('')
     setAnalyzing(true)
 
+    // If this is the first "ask" message, send with image
+    const isFirstAsk = analyzeResult?._askReady && analyzeHistory.length === 0
+
     setAnalyzeResult(prev => ({
       ...prev,
+      _askReady: false,
       followUps: [...(prev?.followUps || []), { role: 'user', text: prompt }],
     }))
 
     try {
-      const result = await analyzeNote('', prompt, analyzeHistory)
-      const responseText = result.response || JSON.stringify(result)
+      const imageData = isFirstAsk ? canvasRef.current?.getCanvasImage() : ''
+      const result = await analyzeNote(imageData, prompt, analyzeHistory, isFirstAsk ? 'ask' : undefined)
+      const responseText = result.response || result.explanation || result.analysis || JSON.stringify(result)
       setAnalyzeHistory(prev => [
         ...prev,
         { role: 'user', text: prompt },
@@ -358,6 +398,8 @@ export default function Notebook() {
         ...prev,
         followUps: [...(prev?.followUps || []), { role: 'model', text: responseText }],
       }))
+      // Auto-log any words detected
+      if (result.words?.length) autoLogWords(result.words)
     } catch (err) {
       setAnalyzeResult(prev => ({
         ...prev,
@@ -366,7 +408,7 @@ export default function Notebook() {
     }
     setAnalyzing(false)
     setTimeout(() => analyzeChatRef.current?.scrollTo(0, analyzeChatRef.current.scrollHeight), 100)
-  }, [analyzePrompt, analyzing, analyzeHistory])
+  }, [analyzePrompt, analyzing, analyzeHistory, analyzeResult, autoLogWords])
 
   const handleAddWord = useCallback(async (word) => {
     if (!currentUser || !selectedDeckId || addedWords.has(word.arabic)) return
@@ -387,18 +429,7 @@ export default function Notebook() {
         dual: forms.dual || '',
         plural: forms.plural || '',
       })
-      // Log as contribution for admin tracking
-      try {
-        await submitContribution(currentUser.id, currentUser.username, {
-          type: 'new_word',
-          arabic: word.arabic,
-          definition: word.meaning,
-          root: (word.root || '').replace(/\s/g, ''),
-          pos: word.partOfSpeech || '',
-          source: 'gemini',
-          status: 'approved',
-        })
-      } catch (cErr) { console.warn('Contribution log failed:', cErr) }
+      // Words are already auto-logged to contributions via autoLogWords
       setAddedWords(prev => new Set([...prev, word.arabic]))
     } catch (err) {
       console.error('Failed to add word:', err)
@@ -651,7 +682,13 @@ export default function Notebook() {
           <div className="notebook-analyze-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Sparkles size={16} />
-              <span style={{ fontWeight: 600 }}>AI Analysis</span>
+              <span style={{ fontWeight: 600 }}>
+                {analyzeResult?._mode === 'transcribe' ? 'Transcription' :
+                 analyzeResult?._mode === 'explain' ? 'Explain My Notes' :
+                 analyzeResult?._mode === 'feedback' ? 'Tutor Feedback' :
+                 analyzeResult?._mode === 'ask' ? 'AI Response' :
+                 'AI Analysis'}
+              </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <button
@@ -676,6 +713,13 @@ export default function Notebook() {
               </div>
             )}
 
+            {analyzeResult?._askReady && (
+              <div className="notebook-analyze-loading" style={{ opacity: 0.7 }}>
+                <MessageCircleQuestion size={32} strokeWidth={1} />
+                <span>Type your question below</span>
+              </div>
+            )}
+
             {analyzeResult?.error && (
               <div className="notebook-analyze-error">
                 {analyzeResult.error}
@@ -697,6 +741,22 @@ export default function Notebook() {
                   <div className="notebook-analyze-section">
                     <h4>Translation</h4>
                     <p>{analyzeResult.translation}</p>
+                  </div>
+                )}
+
+                {/* Explanation (explain mode) */}
+                {analyzeResult.explanation && (
+                  <div className="notebook-analyze-section">
+                    <h4>Study Notes</h4>
+                    <div className="notebook-analyze-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(analyzeResult.explanation) }} />
+                  </div>
+                )}
+
+                {/* Response (ask mode) */}
+                {analyzeResult.response && (
+                  <div className="notebook-analyze-section">
+                    <h4>Answer</h4>
+                    <div className="notebook-analyze-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(analyzeResult.response) }} />
                   </div>
                 )}
 
@@ -786,11 +846,12 @@ export default function Notebook() {
               <input
                 type="text"
                 className="form-input"
-                placeholder="Ask a follow-up question…"
+                placeholder={analyzeResult._askReady ? 'Ask a question about your notes…' : 'Ask a follow-up question…'}
                 value={analyzePrompt}
                 onChange={e => setAnalyzePrompt(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleFollowUp() }}
                 disabled={analyzing}
+                autoFocus={!!analyzeResult._askReady}
               />
               <button
                 className="btn btn-primary btn-sm"

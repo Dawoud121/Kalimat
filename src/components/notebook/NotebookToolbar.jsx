@@ -1,6 +1,14 @@
-// v2.9.0
-import React, { useState } from 'react'
-import { Pen, Highlighter, Eraser, Undo2, Redo2, Trash2, Lasso, Type, ImagePlus, Spline, Download, Sparkles } from 'lucide-react'
+// v2.9.1
+import React, { useState, useEffect, useRef } from 'react'
+import { Pen, Highlighter, Eraser, Undo2, Redo2, Trash2, Lasso, Type, ImagePlus, Spline, Download, Sparkles, Languages, BookOpenText, GraduationCap, ScanSearch, MessageCircleQuestion } from 'lucide-react'
+
+const AI_MODES = [
+  { key: 'transcribe', label: 'Transcribe & Translate', icon: Languages, desc: 'Read and translate your handwriting' },
+  { key: 'explain',    label: 'Explain My Notes',       icon: BookOpenText, desc: 'Reorganize messy notes into study notes' },
+  { key: 'feedback',   label: 'Tutor Feedback',         icon: GraduationCap, desc: 'Get corrections and learning tips' },
+  { key: 'full',       label: 'Full Analysis',          icon: ScanSearch, desc: 'Transcription + feedback + vocabulary' },
+  { key: 'ask',        label: 'Ask About This Note',    icon: MessageCircleQuestion, desc: 'Ask a question about your notes' },
+]
 
 const COLORS = [
   { value: '#000000', label: 'Black' },
@@ -29,6 +37,18 @@ export default function NotebookToolbar({
   onAnalyze, analyzing, hasAnalysis,
 }) {
   const [exportOpen, setExportOpen] = useState(false)
+  const [aiMenuOpen, setAiMenuOpen] = useState(false)
+  const aiMenuRef = useRef(null)
+
+  // Close AI menu on outside click
+  useEffect(() => {
+    if (!aiMenuOpen) return
+    const handler = (e) => {
+      if (aiMenuRef.current && !aiMenuRef.current.contains(e.target)) setAiMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [aiMenuOpen])
 
   return (
     <div className="notebook-toolbar">
@@ -141,15 +161,54 @@ export default function NotebookToolbar({
       </div>
 
       <div className="notebook-toolbar-divider" />
-      <div className="notebook-toolbar-group">
+      <div className="notebook-toolbar-group" style={{ position: 'relative' }} ref={aiMenuRef}>
         <button
           className={`notebook-tool-btn notebook-analyze-btn${analyzing ? ' analyzing' : ''}${hasAnalysis ? ' has-results' : ''}`}
-          onClick={onAnalyze}
+          onClick={() => {
+            if (hasAnalysis && !aiMenuOpen) {
+              // If we have results, toggle panel; long-press or second click opens menu
+              onAnalyze('toggle')
+            } else {
+              setAiMenuOpen(!aiMenuOpen)
+            }
+          }}
           disabled={analyzing}
-          title="Analyze with AI"
+          title="AI Analysis"
         >
           <Sparkles size={16} />
         </button>
+        {aiMenuOpen && (
+          <div className="notebook-ai-menu">
+            {AI_MODES.map(m => (
+              <button
+                key={m.key}
+                className="notebook-ai-menu-item"
+                onClick={() => { setAiMenuOpen(false); onAnalyze(m.key) }}
+              >
+                <m.icon size={16} />
+                <div className="notebook-ai-menu-item-text">
+                  <span className="notebook-ai-menu-item-label">{m.label}</span>
+                  <span className="notebook-ai-menu-item-desc">{m.desc}</span>
+                </div>
+              </button>
+            ))}
+            {hasAnalysis && (
+              <>
+                <div className="sidebar-divider" style={{ margin: '4px 0' }} />
+                <button
+                  className="notebook-ai-menu-item"
+                  onClick={() => { setAiMenuOpen(false); onAnalyze('toggle') }}
+                >
+                  <Sparkles size={16} />
+                  <div className="notebook-ai-menu-item-text">
+                    <span className="notebook-ai-menu-item-label">Show Results</span>
+                    <span className="notebook-ai-menu-item-desc">Open the analysis panel</span>
+                  </div>
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="notebook-toolbar-divider" />

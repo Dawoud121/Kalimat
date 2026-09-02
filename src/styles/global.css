@@ -5505,6 +5505,60 @@ input[type="checkbox"] {
   50% { opacity: 0.4; }
 }
 
+.notebook-ai-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 100;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  padding: 6px;
+  min-width: 280px;
+  animation: menu-fade-in 0.15s ease-out;
+}
+@keyframes menu-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.notebook-ai-menu-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--color-text);
+  transition: background 0.15s;
+}
+.notebook-ai-menu-item:hover {
+  background: var(--color-hover);
+}
+.notebook-ai-menu-item > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--color-brand);
+}
+.notebook-ai-menu-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.notebook-ai-menu-item-label {
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+.notebook-ai-menu-item-desc {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  line-height: 1.3;
+}
+
 /* ── Notebook mobile ──────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .notebook-page {
