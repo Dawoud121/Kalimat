@@ -930,3 +930,7 @@ export async function deleteNotebookImage(imageId) {
   return api.del(`/notebook/images/${imageId}`)
 }
 
+export async function analyzeNote(imageBase64, prompt, history = []) {
+  return api.post('/notebook/analyze', { image: imageBase64, prompt, history })
+}
+

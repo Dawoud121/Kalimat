@@ -10,4 +10,5 @@ return [
     'site_url'        => 'https://your-domain.com',
     'azure_tts_key'   => '',
     'azure_tts_region'=> 'australiaeast',
+    'gemini_api_key'  => '',
 ];

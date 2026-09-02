@@ -280,6 +280,115 @@ if ($method === 'GET' && preg_match('#^/notebook/images/(\d+)$#', $path, $m)) {
     json_response($result);
 }
 
+// ── Gemini Analysis ───────────────────────────────────────────────────
+
+// POST /notebook/analyze
+if ($method === 'POST' && $path === '/notebook/analyze') {
+    $payload = require_auth($config);
+    $apiKey = $config['gemini_api_key'] ?? '';
+    if (!$apiKey) json_response(['error' => 'Gemini API key not configured'], 500);
+
+    $body = get_json_body();
+    $imageData = $body['image'] ?? '';
+    $userPrompt = trim($body['prompt'] ?? 'Analyze this note');
+    $history = $body['history'] ?? [];
+
+    if (!$imageData) json_response(['error' => 'No image provided'], 400);
+
+    // Build Gemini request
+    $systemInstruction = <<<'PROMPT'
+You are an Arabic language tutor analyzing a student's handwritten Arabic notes. Always respond in English unless the user asks otherwise.
+
+When analyzing an image of handwritten Arabic, return a JSON object with these fields:
+- "transcription": the Arabic text you can read, preserving line breaks
+- "transcriptionWithDiacritics": same text with full tashkeel/diacritics added
+- "translation": English translation of the text
+- "words": array of unique vocabulary words found, each with "arabic" (the word), "root" (3-letter root with spaces e.g. "ك ت ب"), "meaning" (brief English meaning)
+- "corrections": array of grammar/spelling mistakes found, each with "original" (what was written), "corrected" (what it should be), "explanation" (why, in simple terms)
+- "feedback": a brief encouraging comment about the writing with one specific tip for improvement
+
+If the user asks a follow-up question instead of requesting analysis, respond naturally as a tutor. In that case return a JSON object with just a "response" field containing your answer.
+
+Always return valid JSON. No markdown code fences around the JSON.
+PROMPT;
+
+    // Build contents array
+    $contents = [];
+
+    // Add conversation history
+    foreach ($history as $msg) {
+        $contents[] = [
+            'role' => $msg['role'],
+            'parts' => [['text' => $msg['text']]],
+        ];
+    }
+
+    // Build current user message parts
+    $parts = [];
+
+    // Add image on first message (no history) or if image is provided
+    if ($imageData) {
+        // Strip data URL prefix if present
+        $base64 = $imageData;
+        if (strpos($imageData, ',') !== false) {
+            $base64 = explode(',', $imageData, 2)[1];
+        }
+        $parts[] = [
+            'inlineData' => [
+                'mimeType' => 'image/png',
+                'data' => $base64,
+            ],
+        ];
+    }
+
+    $parts[] = ['text' => $userPrompt];
+    $contents[] = ['role' => 'user', 'parts' => $parts];
+
+    $geminiPayload = [
+        'system_instruction' => ['parts' => [['text' => $systemInstruction]]],
+        'contents' => $contents,
+        'generationConfig' => [
+            'temperature' => 0.3,
+            'responseMimeType' => 'application/json',
+        ],
+    ];
+
+    $url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' . urlencode($apiKey);
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_POSTFIELDS => json_encode($geminiPayload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 60,
+    ]);
+
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = curl_error($ch);
+    curl_close($ch);
+
+    if ($curlErr) json_response(['error' => 'Gemini request failed: ' . $curlErr], 500);
+    if ($httpCode !== 200) {
+        $errBody = json_decode($response, true);
+        $errMsg = $errBody['error']['message'] ?? 'Gemini API error';
+        json_response(['error' => $errMsg], $httpCode);
+    }
+
+    $result = json_decode($response, true);
+    $text = $result['candidates'][0]['content']['parts'][0]['text'] ?? '';
+
+    // Try to parse the JSON response
+    $parsed = json_decode($text, true);
+    if ($parsed === null) {
+        // If Gemini didn't return valid JSON, wrap it
+        $parsed = ['response' => $text];
+    }
+
+    json_response($parsed);
+}
+
 // DELETE /notebook/images/:id
 if ($method === 'DELETE' && preg_match('#^/notebook/images/(\d+)$#', $path, $m)) {
     $payload = require_auth($config);

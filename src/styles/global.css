@@ -5228,6 +5228,206 @@ input[type="checkbox"] {
   background: var(--color-text);
 }
 
+/* ── AI Analysis panel ────────────────────────────────────────────────── */
+.notebook-analyze-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  max-width: 100vw;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.1);
+}
+
+.notebook-analyze-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.95rem;
+}
+
+.notebook-analyze-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.notebook-analyze-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 0;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.notebook-analyze-error {
+  color: var(--color-danger);
+  background: var(--color-danger-muted, rgba(212, 86, 86, 0.1));
+  border-radius: var(--radius-md);
+  padding: 12px;
+  font-size: 0.85rem;
+}
+
+.notebook-analyze-section {
+  margin-bottom: 20px;
+}
+
+.notebook-analyze-section h4 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  margin: 0 0 8px 0;
+}
+
+.notebook-analyze-section p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.notebook-analyze-arabic {
+  font-family: 'Noto Naskh Arabic', serif;
+  font-size: 1.1rem;
+  line-height: 2;
+}
+
+.notebook-analyze-words {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.notebook-analyze-word {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.notebook-analyze-word-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.notebook-analyze-word-arabic {
+  font-family: 'Noto Naskh Arabic', serif;
+  font-size: 1rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.notebook-analyze-word-root {
+  font-family: 'Noto Naskh Arabic', serif;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.notebook-analyze-word-meaning {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notebook-analyze-correction {
+  margin-bottom: 12px;
+  padding: 10px;
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--color-brand);
+}
+
+.notebook-analyze-correction-diff {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-family: 'Noto Naskh Arabic', serif;
+  font-size: 1rem;
+}
+
+.notebook-analyze-original {
+  text-decoration: line-through;
+  color: var(--color-danger);
+}
+
+.notebook-analyze-corrected {
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.notebook-analyze-explanation {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.notebook-analyze-followup {
+  margin-top: 12px;
+}
+
+.notebook-analyze-user-msg {
+  background: var(--color-brand-muted);
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  margin-left: 32px;
+}
+
+.notebook-analyze-ai-msg {
+  background: var(--color-bg);
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  margin-right: 32px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.notebook-analyze-input {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.notebook-analyze-input .form-input {
+  flex: 1;
+  font-size: 0.85rem;
+}
+
+.notebook-analyze-btn {
+  color: var(--color-brand);
+}
+
+.notebook-analyze-btn.analyzing {
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 /* ── Notebook mobile ──────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .notebook-page {
@@ -5244,6 +5444,11 @@ input[type="checkbox"] {
   }
   .notebook-canvas-wrapper {
     min-height: 400px;
+  }
+  .notebook-analyze-panel {
+    width: 100%;
+    top: auto;
+    height: 60vh;
   }
 }
 
