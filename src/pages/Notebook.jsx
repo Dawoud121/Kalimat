@@ -88,6 +88,17 @@ export default function Notebook() {
     } catch { /* ignore */ }
   }, [selectedLessonId])
 
+  // Load user decks whenever the analysis panel opens
+  useEffect(() => {
+    if (!analyzeOpen || !currentUser || userDecks.length > 0) return
+    getUserDecks(currentUser.id)
+      .then(decks => {
+        setUserDecks(decks)
+        if (decks.length > 0 && !selectedDeckId) setSelectedDeckId(decks[0].id)
+      })
+      .catch(() => {})
+  }, [analyzeOpen, currentUser])
+
   // Save analysis to localStorage when it changes
   useEffect(() => {
     if (!selectedLessonId || !analyzeResult || analyzeResult.error) return
@@ -387,7 +398,7 @@ export default function Notebook() {
           source: 'gemini',
           status: 'approved',
         })
-      } catch { /* contribution logging is best-effort */ }
+      } catch (cErr) { console.warn('Contribution log failed:', cErr) }
       setAddedWords(prev => new Set([...prev, word.arabic]))
     } catch (err) {
       console.error('Failed to add word:', err)

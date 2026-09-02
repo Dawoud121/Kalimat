@@ -659,8 +659,7 @@ export default function Contributions() {
         list = currentUser ? await getUserContributions(currentUser.id) : []
       } else if (section === 'gemini' && isAdmin) {
         // Admin-only: Gemini AI-added words
-        const raw = await getContributions({ status: 'approved' })
-        list = raw.filter(c => c.source === 'gemini')
+        list = await getContributions({ status: 'approved', source: 'gemini', limit: 200 })
       } else if (section === 'flagged' && isAdmin) {
         // Admin-only: sentence-flagged unknown words
         list = await getSentenceFlagContributions()
