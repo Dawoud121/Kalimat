@@ -13,8 +13,9 @@ import {
   removeVote,
   getUserVotes,
   moderateContribution,
+  deleteContribution,
 } from '../lib/dataService'
-import { ThumbsUp, ThumbsDown, Check, X, Plus, AlertTriangle, Pencil } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, Check, X, Plus, AlertTriangle, Pencil, Trash2 } from 'lucide-react'
 
 const ADMIN_EMAIL = 'dawoudhussein07@gmail.com'
 
@@ -492,7 +493,7 @@ const STATUS_COLORS = {
 }
 
 // ── Contribution card ─────────────────────────────────────────────────────────
-function ContributionCard({ contribution, userVote, onVote, onModerate, onEdit, isAdmin, currentUserId, showStatus }) {
+function ContributionCard({ contribution, userVote, onVote, onModerate, onEdit, onDelete, isAdmin, currentUserId, showStatus }) {
   const score   = contribution.vote_score || 0
   const isOwn   = contribution.submitted_by === currentUserId
   const canVote = !isOwn && contribution.status === 'pending'
@@ -556,6 +557,17 @@ function ContributionCard({ contribution, userVote, onVote, onModerate, onEdit, 
               <X size={13} /> Reject
             </button>
           </div>
+        )}
+        {/* Admin delete (for gemini words etc.) */}
+        {isAdmin && onDelete && (
+          <button
+            className="btn btn-sm btn-ghost"
+            style={{ padding: '4px 8px', color: 'var(--color-danger)', flexShrink: 0 }}
+            onClick={() => onDelete(contribution)}
+            title="Delete"
+          >
+            <Trash2 size={14} />
+          </button>
         )}
       </div>
 
@@ -700,6 +712,13 @@ export default function Contributions() {
 
   const handleModerate = (contribution, action) => setModTarget({ contribution, action })
   const handleEdit     = (contribution) => setEditTarget(contribution)
+  const handleDelete   = async (contribution) => {
+    if (!confirm(`Delete "${contribution.arabic}"?`)) return
+    try {
+      await deleteContribution(contribution.id)
+      setItems(prev => prev.filter(c => c.id !== contribution.id))
+    } catch (err) { console.error(err) }
+  }
 
   const EMPTY_MESSAGES = {
     pending:     'No pending contributions from the community',
@@ -760,6 +779,7 @@ export default function Contributions() {
               onVote={handleVote}
               onModerate={handleModerate}
               onEdit={handleEdit}
+              onDelete={section === 'gemini' ? handleDelete : undefined}
               isAdmin={isAdmin}
               currentUserId={currentUser?.id}
               showStatus={section === 'submissions'}

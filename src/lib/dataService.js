@@ -660,6 +660,10 @@ export async function moderateContribution(contributionId, moderatorId, moderato
   return await api.post(`/contributions/${contributionId}/moderate`, { action, note })
 }
 
+export async function deleteContribution(contributionId) {
+  return await api.del(`/contributions/${contributionId}`)
+}
+
 // ── Sentences ─────────────────────────────────────────────────────────────────
 
 export async function getSentencesForWord(wordId) {

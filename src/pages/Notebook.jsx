@@ -728,32 +728,32 @@ export default function Notebook() {
 
             {analyzeResult && !analyzeResult.error && (
               <>
-                {/* Transcription with harakat */}
-                {analyzeResult.transcription && (
+                {/* Transcription — show for transcribe and full modes */}
+                {analyzeResult.transcription && (analyzeResult._mode === 'transcribe' || analyzeResult._mode === 'full') && (
                   <div className="notebook-analyze-section">
                     <h4>Transcription</h4>
                     <p className="notebook-analyze-arabic" dir="rtl">{analyzeResult.transcription}</p>
                   </div>
                 )}
 
-                {/* Translation */}
-                {analyzeResult.translation && (
+                {/* Translation — show for transcribe and full modes */}
+                {analyzeResult.translation && (analyzeResult._mode === 'transcribe' || analyzeResult._mode === 'full') && (
                   <div className="notebook-analyze-section">
                     <h4>Translation</h4>
                     <p>{analyzeResult.translation}</p>
                   </div>
                 )}
 
-                {/* Explanation (explain mode) */}
-                {analyzeResult.explanation && (
+                {/* Explanation — explain mode only */}
+                {analyzeResult.explanation && analyzeResult._mode === 'explain' && (
                   <div className="notebook-analyze-section">
                     <h4>Study Notes</h4>
                     <div className="notebook-analyze-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(analyzeResult.explanation) }} />
                   </div>
                 )}
 
-                {/* Response (ask mode) */}
-                {analyzeResult.response && (
+                {/* Response — ask mode only */}
+                {analyzeResult.response && analyzeResult._mode === 'ask' && (
                   <div className="notebook-analyze-section">
                     <h4>Answer</h4>
                     <div className="notebook-analyze-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(analyzeResult.response) }} />
@@ -812,10 +812,10 @@ export default function Notebook() {
                   </div>
                 )}
 
-                {/* Free-form analysis */}
-                {analyzeResult.analysis && (
+                {/* Tutor feedback — feedback and full modes */}
+                {analyzeResult.analysis && (analyzeResult._mode === 'feedback' || analyzeResult._mode === 'full') && (
                   <div className="notebook-analyze-section">
-                    <h4>Analysis</h4>
+                    <h4>{analyzeResult._mode === 'feedback' ? 'Tutor Feedback' : 'Analysis'}</h4>
                     <div className="notebook-analyze-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(analyzeResult.analysis) }} />
                   </div>
                 )}
