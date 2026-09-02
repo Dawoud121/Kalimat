@@ -1,4 +1,4 @@
-// v2.9.0
+// v2.9.2
 import React, { useRef, useState, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react'
 import NotebookToolbar from './NotebookToolbar'
 import SelectionToolbar from './SelectionToolbar'
@@ -168,6 +168,21 @@ function hitTestStroke(stroke, x, y, radius) {
   return false
 }
 
+function getResizeHandle(el, x, y, zoom) {
+  if (el.type !== 'image') return null
+  const handleSize = 14 / zoom
+  const corners = [
+    { name: 'tl', cx: el.x, cy: el.y },
+    { name: 'tr', cx: el.x + el.width, cy: el.y },
+    { name: 'bl', cx: el.x, cy: el.y + el.height },
+    { name: 'br', cx: el.x + el.width, cy: el.y + el.height },
+  ]
+  for (const c of corners) {
+    if (Math.abs(x - c.cx) < handleSize && Math.abs(y - c.cy) < handleSize) return c.name
+  }
+  return null
+}
+
 function getElementBounds(el) {
   if (el.type === 'text') {
     const w = el.width || 200
@@ -204,7 +219,7 @@ function getSelectionBounds(elements, indices) {
 }
 
 // ── Image compression ──
-function compressImage(file, maxDim = 800, quality = 0.7) {
+function compressImage(file, maxDim = 2048, quality = 0.92) {
   return new Promise((resolve) => {
     const reader = new FileReader()
     reader.onload = () => {
@@ -225,6 +240,21 @@ function compressImage(file, maxDim = 800, quality = 0.7) {
     }
     reader.readAsDataURL(file)
   })
+}
+
+// Helper: read image from clipboard API (for contextmenu paste)
+async function readClipboardImage() {
+  try {
+    const items = await navigator.clipboard.read()
+    for (const item of items) {
+      const imageType = item.types.find(t => t.startsWith('image/'))
+      if (imageType) {
+        const blob = await item.getType(imageType)
+        return await compressImage(blob)
+      }
+    }
+  } catch { /* clipboard API not available or no image */ }
+  return null
 }
 
 // ── Main Component ──
@@ -273,6 +303,11 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   // Text editing state
   const [editingText, setEditingText] = useState(null) // { idx, el, isNew }
   const textAreaRef = useRef(null)
+
+  // Image selection state (move/resize)
+  const [selectedImage, setSelectedImage] = useState(null) // index into elementsRef
+  const imgDragRef = useRef(null) // { mode: 'move'|'resize', handle, startX, startY, origX, origY, origW, origH }
+  const fileInputRef = useRef(null)
 
   // Lasso selection state
   const [lassoPath, setLassoPath] = useState(null) // array of {x,y} in canvas space while drawing
@@ -349,6 +384,39 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     img.onload = () => redrawAll()
     img.src = src
     imageCacheRef.current.set(src, img)
+  }
+
+  function insertImageAtCenter(dataUrl, width, height) {
+    const wrapper = wrapperRef.current
+    const v = viewRef.current
+    const cx = (-v.x + (wrapper?.clientWidth || 400) / 2) / v.zoom
+    const cy = (-v.y + (wrapper?.clientHeight || 400) / 2) / v.zoom
+    const imgW = Math.min(width, 640)
+    const imgH = imgW * (height / width)
+    const imgEl = {
+      type: 'image',
+      id: crypto.randomUUID(),
+      x: cx - imgW / 2,
+      y: cy - imgH / 2,
+      width: imgW,
+      height: imgH,
+      src: dataUrl,
+    }
+    preloadImage(dataUrl)
+    elementsRef.current.push(imgEl)
+    undoStackRef.current.push({ type: 'draw', stroke: imgEl })
+    redoStackRef.current = []
+    redrawAll()
+    scheduleSave()
+    updateCounts()
+    // Auto-select the new image
+    setSelectedImage(elementsRef.current.length - 1)
+  }
+
+  async function handleFileInput(file) {
+    if (!file) return
+    const { dataUrl, width, height } = await compressImage(file)
+    insertImageAtCenter(dataUrl, width, height)
   }
 
   // ── Canvas sizing ──
@@ -558,6 +626,40 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     if (selectedIndices && selectedIndices.size > 0) {
       drawSelectionHighlight(ctx)
     }
+    // Draw image selection handles
+    if (selectedImage !== null) {
+      const el = elementsRef.current[selectedImage]
+      if (el?.type === 'image') {
+        drawImageHandles(ctx, el)
+      }
+    }
+  }
+
+  function drawImageHandles(ctx, el) {
+    const z = viewRef.current.zoom
+    const handleSize = 8 / z
+    ctx.save()
+    // Dashed border
+    ctx.setLineDash([6 / z, 4 / z])
+    ctx.strokeStyle = '#1a73e8'
+    ctx.lineWidth = 2 / z
+    ctx.strokeRect(el.x, el.y, el.width, el.height)
+    ctx.setLineDash([])
+    // Corner handles
+    ctx.fillStyle = '#fff'
+    ctx.strokeStyle = '#1a73e8'
+    ctx.lineWidth = 1.5 / z
+    const corners = [
+      [el.x, el.y],
+      [el.x + el.width, el.y],
+      [el.x, el.y + el.height],
+      [el.x + el.width, el.y + el.height],
+    ]
+    for (const [cx, cy] of corners) {
+      ctx.fillRect(cx - handleSize / 2, cy - handleSize / 2, handleSize, handleSize)
+      ctx.strokeRect(cx - handleSize / 2, cy - handleSize / 2, handleSize, handleSize)
+    }
+    ctx.restore()
   }
 
   function drawSelectionHighlight(ctx) {
@@ -780,31 +882,31 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
 
     // ── Image tool ──
     if (tool === 'image') {
-      const input = document.createElement('input')
-      input.type = 'file'
-      input.accept = 'image/*'
-      input.onchange = async (evt) => {
-        const file = evt.target.files?.[0]
-        if (!file) return
-        const { dataUrl, width, height } = await compressImage(file)
-        const imgEl = {
-          type: 'image',
-          id: crypto.randomUUID(),
-          x: pos.x,
-          y: pos.y,
-          width: Math.min(width, 640),
-          height: Math.min(width, 640) * (height / width),
-          src: dataUrl,
+      // Check if clicking on an existing image — select it for move/resize
+      for (let i = elementsRef.current.length - 1; i >= 0; i--) {
+        const el = elementsRef.current[i]
+        if (el.type === 'image' && hitTestElement(el, pos.x, pos.y, 0)) {
+          setSelectedImage(i)
+          // Check if clicking a resize handle
+          const handle = getResizeHandle(el, pos.x, pos.y, viewRef.current.zoom)
+          imgDragRef.current = {
+            mode: handle ? 'resize' : 'move',
+            handle,
+            startX: pos.x, startY: pos.y,
+            origX: el.x, origY: el.y,
+            origW: el.width, origH: el.height,
+          }
+          isDrawingRef.current = true
+          return
         }
-        preloadImage(dataUrl)
-        elementsRef.current.push(imgEl)
-        undoStackRef.current.push({ type: 'draw', stroke: imgEl })
-        redoStackRef.current = []
-        redrawAll()
-        scheduleSave()
-        updateCounts()
       }
-      input.click()
+      // If already have a selected image and clicked elsewhere, deselect
+      if (selectedImage !== null) {
+        setSelectedImage(null)
+        return
+      }
+      // Open file picker
+      fileInputRef.current?.click()
       return
     }
 
@@ -891,7 +993,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       points: [{ x: startPos.x, y: startPos.y, pressure: e.pressure || 0.5 }],
     }
     isDrawingRef.current = true
-  }, [tool, color, thickness, selectedIndices])
+  }, [tool, color, thickness, selectedIndices, selectedImage])
 
   const handlePointerMove = useCallback((e) => {
     if (e.pointerType === 'touch') {
@@ -913,6 +1015,44 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     e.preventDefault()
 
     const pos = screenToCanvas(e.clientX, e.clientY)
+
+    // Image move/resize
+    if (tool === 'image' && imgDragRef.current && selectedImage !== null) {
+      const el = elementsRef.current[selectedImage]
+      if (!el) return
+      const d = imgDragRef.current
+      const dx = pos.x - d.startX
+      const dy = pos.y - d.startY
+      if (d.mode === 'move') {
+        el.x = d.origX + dx
+        el.y = d.origY + dy
+      } else if (d.mode === 'resize') {
+        const aspect = d.origW / d.origH
+        if (d.handle === 'br') {
+          el.width = Math.max(40, d.origW + dx)
+          el.height = el.width / aspect
+        } else if (d.handle === 'bl') {
+          const newW = Math.max(40, d.origW - dx)
+          el.x = d.origX + d.origW - newW
+          el.width = newW
+          el.height = newW / aspect
+        } else if (d.handle === 'tr') {
+          el.width = Math.max(40, d.origW + dx)
+          const newH = el.width / aspect
+          el.y = d.origY + d.origH - newH
+          el.height = newH
+        } else if (d.handle === 'tl') {
+          const newW = Math.max(40, d.origW - dx)
+          el.x = d.origX + d.origW - newW
+          const newH = newW / aspect
+          el.y = d.origY + d.origH - newH
+          el.width = newW
+          el.height = newH
+        }
+      }
+      redrawAll()
+      return
+    }
 
     // Lasso drag
     if (tool === 'lasso' && selDragRef.current) {
@@ -1054,6 +1194,25 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     if (!isDrawingRef.current) return
     isDrawingRef.current = false
 
+    // Image move/resize release
+    if (tool === 'image' && imgDragRef.current && selectedImage !== null) {
+      const d = imgDragRef.current
+      const el = elementsRef.current[selectedImage]
+      imgDragRef.current = null
+      if (el && (el.x !== d.origX || el.y !== d.origY || el.width !== d.origW || el.height !== d.origH)) {
+        undoStackRef.current.push({
+          type: 'transform',
+          indices: [selectedImage],
+          before: [{ idx: selectedImage, x: d.origX, y: d.origY, width: d.origW, height: d.origH }],
+          after: [{ idx: selectedImage, x: el.x, y: el.y, width: el.width, height: el.height }],
+        })
+        redoStackRef.current = []
+        scheduleSave()
+        updateCounts()
+      }
+      return
+    }
+
     // Lasso drag release
     if (tool === 'lasso' && selDragRef.current) {
       if (selDragRef.current.moved) {
@@ -1170,7 +1329,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
 
     scheduleSave()
     updateCounts()
-  }, [tool, smoothing, lassoPath, selectedIndices])
+  }, [tool, smoothing, lassoPath, selectedIndices, selectedImage])
 
   // ── Undo / Redo ──
   const handleUndo = useCallback(() => {
@@ -1191,7 +1350,10 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       for (const orig of action.before) {
         const el = elementsRef.current[orig.idx]
         if (!el) continue
-        if (el.type === 'text' || el.type === 'image') { el.x = orig.x; el.y = orig.y }
+        if (el.type === 'text' || el.type === 'image') {
+          el.x = orig.x; el.y = orig.y
+          if (orig.width != null) { el.width = orig.width; el.height = orig.height }
+        }
         else if (orig.points) el.points = orig.points.map(p => ({ ...p }))
       }
       redoStackRef.current.push(action)
@@ -1245,7 +1407,10 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       for (const snap of action.after) {
         const el = elementsRef.current[snap.idx]
         if (!el) continue
-        if (el.type === 'text' || el.type === 'image') { el.x = snap.x; el.y = snap.y }
+        if (el.type === 'text' || el.type === 'image') {
+          el.x = snap.x; el.y = snap.y
+          if (snap.width != null) { el.width = snap.width; el.height = snap.height }
+        }
         else if (snap.points) el.points = snap.points.map(p => ({ ...p }))
       }
       undoStackRef.current.push(action)
@@ -1462,35 +1627,27 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
           const file = item.getAsFile()
           if (!file) continue
           const { dataUrl, width, height } = await compressImage(file)
-          const v = viewRef.current
-          const cx = (-v.x + (wrapper.clientWidth / 2)) / v.zoom
-          const cy = (-v.y + (wrapper.clientHeight / 2)) / v.zoom
-          const imgW = Math.min(width, 640)
-          const imgH = imgW * (height / width)
-          const imgEl = {
-            type: 'image',
-            id: crypto.randomUUID(),
-            x: cx - imgW / 2,
-            y: cy - imgH / 2,
-            width: imgW,
-            height: imgH,
-            src: dataUrl,
-          }
-          preloadImage(dataUrl)
-          elementsRef.current.push(imgEl)
-          undoStackRef.current.push({ type: 'draw', stroke: imgEl })
-          redoStackRef.current = []
-          redrawAll()
-          scheduleSave()
-          updateCounts()
+          insertImageAtCenter(dataUrl, width, height)
           break
         }
       }
     }
+    // Right-click context menu: paste image from clipboard
+    const handleContextMenu = async (e) => {
+      e.preventDefault()
+      const result = await readClipboardImage()
+      if (result) {
+        insertImageAtCenter(result.dataUrl, result.width, result.height)
+      }
+    }
     wrapper.addEventListener('paste', handlePaste)
+    wrapper.addEventListener('contextmenu', handleContextMenu)
     // Make wrapper focusable for paste
     if (!wrapper.getAttribute('tabindex')) wrapper.setAttribute('tabindex', '-1')
-    return () => wrapper.removeEventListener('paste', handlePaste)
+    return () => {
+      wrapper.removeEventListener('paste', handlePaste)
+      wrapper.removeEventListener('contextmenu', handleContextMenu)
+    }
   }, [lessonId])
 
   // ── Export ──
@@ -1595,6 +1752,10 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       setShowSelToolbar(false)
       lassoPolygonRef.current = null
     }
+    if (tool !== 'image') {
+      setSelectedImage(null)
+    }
+    redrawAll()
   }, [tool])
 
   // ── Text overlay position ──
@@ -1637,6 +1798,13 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
         onAnalyze={onAnalyze}
         analyzing={analyzing}
         hasAnalysis={hasAnalysis}
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={e => { handleFileInput(e.target.files?.[0]); e.target.value = '' }}
       />
       <div ref={wrapperRef} className="notebook-canvas-wrapper" tabIndex={-1}>
         <canvas ref={linesCanvasRef} className="notebook-canvas" />
