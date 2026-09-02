@@ -290,96 +290,134 @@ if ($method === 'POST' && $path === '/notebook/analyze') {
 
     $body = get_json_body();
     $imageData = $body['image'] ?? '';
-    $userPrompt = trim($body['prompt'] ?? 'Analyze this note');
+    $userPrompt = trim($body['prompt'] ?? '');
     $history = $body['history'] ?? [];
+    $mode = $body['mode'] ?? 'full'; // transcribe, explain, feedback, full, ask
 
     // Image required for first analysis, optional for follow-ups
     if (!$imageData && empty($history)) json_response(['error' => 'No image provided'], 400);
 
-    // Build Gemini request
-    $systemInstruction = <<<'PROMPT'
-You are an expert Arabic tutor specialising in Modern Standard Arabic (Fusha). Analyse the student's handwritten lesson notes.
+    // ── Modular prompt builder ──
+    $preamble = "You are an expert Arabic tutor specialising in Modern Standard Arabic (Fusha). Analyse the student's handwritten lesson notes.\n\nReturn valid JSON only. No markdown code fences.\n\n";
 
-Return valid JSON only.
-
-For a new image, return:
-
-{
-"transcription": "",
-"translation": "",
-"words": [],
-"analysis": ""
-}
-
-"transcription":
-
-* Transcribe all readable Arabic with full tashkeel.
-* Fix obvious spelling or grammar mistakes when the intended form is clear.
-* Preserve meaningful line breaks with \n.
-* Preserve relevant English text, headings, numbers, and mixed-language notes.
-* If a word is uncertain, give your best reading and mark it like "[word? 0.65]".
+    // Shared reading instructions (used by all image modes)
+    $readingRules = <<<'BLOCK'
+When reading the image:
 * Treat spatially separate text as separate lines/items. Do not combine nearby words into the same sentence unless the layout clearly indicates they belong together.
 * If the page contains corrections, annotations or teacher markings in another colour, recognise them as corrections/annotations rather than merging them into the original sentence.
-* Mention important corrections or low-confidence readings in "analysis".
+* If a word is uncertain, give your best reading and mark it like "[word? 0.65]".
+BLOCK;
 
-"translation":
+    // Vocabulary extraction (always included silently)
+    $vocabBlock = <<<'BLOCK'
 
-* Give a clear natural English translation of the Arabic content.
-
-"words":
-Extract as many useful Arabic content words and phrases from the note as reasonably possible for the student's Word Bank / Add to Deck feature.
+"words": (always include this field)
+Extract as many useful Arabic content words and phrases from the note as reasonably possible.
 
 Each item:
-{
-"arabic": "",
-"root": "",
-"meaning": "",
-"partOfSpeech": "",
-"forms": {},
-"exampleSentence": "",
-"exampleTranslation": "",
-"confidence": 1
-}
+{"arabic": "", "root": "", "meaning": "", "partOfSpeech": "", "forms": {}, "exampleSentence": "", "exampleTranslation": "", "confidence": 1}
 
 Rules:
-
 * Include useful nouns, verbs, adjectives, adverbs, expressions, and lesson-specific vocabulary.
 * Skip only very common particles and function words unless they are important to the lesson.
 * Use the dictionary/headword form in "arabic".
 * Use full tashkeel.
-* Give the Arabic root with spaces, e.g. ك ت ب.
-* Roots may contain 3 or 4 radicals.
+* Give the Arabic root with spaces, e.g. ك ت ب. Roots may contain 3 or 4 radicals.
 * For derived words, give the underlying lexical root, e.g. اِسْتَخْدَمَ → خ د م.
 * If the root is uncertain or not applicable, use null.
 * "partOfSpeech" must be one of: "noun", "verb", "adjective", "adverb", "preposition", "particle", "phrase".
-* For verbs, "forms" should use:
-  {"past": "", "present": "", "command": "", "masdar": ""}
-* For nouns/adjectives, "forms" should use:
-  {"singular": "", "dual": "", "plural": ""}
-* Include full tashkeel on all forms.
-* Use null for forms that are not applicable, uncommon, or uncertain. Do not invent forms.
-* "exampleSentence" should be a short natural Fusha sentence using the word, with full tashkeel.
-* "exampleTranslation" should translate that sentence naturally into English.
-* "confidence" is your confidence from 0 to 1 that the vocabulary entry is correct.
+* For verbs, "forms": {"past": "", "present": "", "command": "", "masdar": ""}
+* For nouns/adjectives, "forms": {"singular": "", "dual": "", "plural": ""}
+* Include full tashkeel on all forms. Use null for forms that are not applicable or uncertain. Do not invent forms.
+* "exampleSentence": a short natural Fusha sentence using the word, with full tashkeel.
+* "exampleTranslation": English translation of that sentence.
+* "confidence": your confidence from 0 to 1 that the entry is correct.
+BLOCK;
+
+    $followUpBlock = "\n\nFor follow-up questions without a new image, return only:\n{\"response\": \"your answer in markdown\"}\n";
+
+    // Build mode-specific prompt
+    if ($mode === 'transcribe') {
+        $systemInstruction = $preamble . "Return: {\"transcription\": \"\", \"translation\": \"\", \"words\": []}\n\n" . $readingRules . <<<'BLOCK'
+
+"transcription":
+* Transcribe all readable Arabic with full tashkeel.
+* Fix obvious spelling or grammar mistakes when the intended form is clear.
+* Preserve meaningful line breaks with \n.
+* Preserve relevant English text, headings, numbers, and mixed-language notes.
+
+"translation":
+* Give a clear natural English translation of the Arabic content.
+BLOCK
+        . $vocabBlock . $followUpBlock;
+
+    } elseif ($mode === 'explain') {
+        $systemInstruction = $preamble . "Return: {\"explanation\": \"\", \"words\": []}\n\n" . $readingRules . <<<'BLOCK'
+
+"explanation":
+Turn the student's messy handwritten lesson notes into a clear, well-organised explanation in English using markdown formatting.
+* Reorganise scattered grammar rules, vocabulary, examples, arrows, and corrections into a coherent set of study notes.
+* Explain the concepts being taught, not just translate line by line.
+* Keep important Arabic examples inline with full tashkeel.
+* Structure with headings, bullet points, and bold where it helps readability.
+* Write as if you are a tutor summarising what this lesson page teaches.
+* If the notes cover multiple topics, use separate sections.
+BLOCK
+        . $vocabBlock . $followUpBlock;
+
+    } elseif ($mode === 'feedback') {
+        $systemInstruction = $preamble . "Return: {\"analysis\": \"\", \"words\": []}\n\n" . $readingRules . <<<'BLOCK'
 
 "analysis":
 Give concise tutor feedback in English using markdown formatting. Focus only on relevant points such as:
+* Grammar or spelling mistakes and how to fix them
+* Unclear handwriting
+* Useful vocabulary distinctions
+* Important language patterns
+* What the student did well
+Do not force feedback categories that are not relevant. Keep analysis under 200 words for short notes and expand only when useful.
+BLOCK
+        . $vocabBlock . $followUpBlock;
 
+    } elseif ($mode === 'ask') {
+        $systemInstruction = $preamble . "The student is asking a question about their notes. Return: {\"response\": \"\", \"words\": []}\n\n" . $readingRules . <<<'BLOCK'
+
+"response":
+Answer the student's question about their notes in English using markdown formatting. Be helpful, specific, and reference the actual content in their notes.
+BLOCK
+        . $vocabBlock . $followUpBlock;
+
+    } else { // full
+        $systemInstruction = $preamble . "Return: {\"transcription\": \"\", \"translation\": \"\", \"explanation\": \"\", \"analysis\": \"\", \"words\": []}\n\n" . $readingRules . <<<'BLOCK'
+
+"transcription":
+* Transcribe all readable Arabic with full tashkeel.
+* Fix obvious spelling or grammar mistakes when the intended form is clear.
+* Preserve meaningful line breaks with \n.
+* Preserve relevant English text, headings, numbers, and mixed-language notes.
+* Mention important corrections or low-confidence readings in "analysis".
+
+"translation":
+* Give a clear natural English translation of the Arabic content.
+
+"explanation":
+Turn the notes into a clear, well-organised explanation in English using markdown.
+* Reorganise scattered content into coherent study notes.
+* Explain concepts, keep important Arabic examples inline with tashkeel.
+* Structure with headings and bullet points.
+
+"analysis":
+Give concise tutor feedback in English using markdown. Focus only on relevant points such as:
 * corrections you made and why
 * grammar or spelling issues
 * unclear handwriting
 * useful vocabulary distinctions
 * important language patterns
 * what the student did well
-
-Do not force feedback categories that are not relevant. Keep analysis under 200 words for short notes and expand only when useful.
-
-For follow-up questions without a new image, return only:
-
-{"response": "your answer in markdown"}
-
-Always return valid JSON with no markdown code fences.
-PROMPT;
+Do not force irrelevant categories. Keep under 200 words for short notes.
+BLOCK
+        . $vocabBlock . $followUpBlock;
+    }
 
     // Build contents array
     $contents = [];
@@ -395,9 +433,7 @@ PROMPT;
     // Build current user message parts
     $parts = [];
 
-    // Add image on first message (no history) or if image is provided
     if ($imageData) {
-        // Strip data URL prefix if present
         $base64 = $imageData;
         if (strpos($imageData, ',') !== false) {
             $base64 = explode(',', $imageData, 2)[1];
@@ -410,7 +446,7 @@ PROMPT;
         ];
     }
 
-    $parts[] = ['text' => $userPrompt];
+    $parts[] = ['text' => $userPrompt ?: 'Analyze this note'];
     $contents[] = ['role' => 'user', 'parts' => $parts];
 
     $geminiPayload = [
@@ -448,13 +484,30 @@ PROMPT;
     $result = json_decode($response, true);
     $text = $result['candidates'][0]['content']['parts'][0]['text'] ?? '';
 
-    // Try to parse the JSON response
     $parsed = json_decode($text, true);
     if ($parsed === null) {
-        // If Gemini didn't return valid JSON, wrap it
         $parsed = ['response' => $text];
     }
 
+    // Normalize response fields — Gemini sometimes ignores the requested schema
+    // and puts content in wrong fields. Remap to the expected field for each mode.
+    if ($mode === 'explain' && empty($parsed['explanation'])) {
+        // Gemini may put explain content in analysis, transcription, or response
+        $parsed['explanation'] = $parsed['analysis'] ?? $parsed['transcription'] ?? $parsed['response'] ?? '';
+        unset($parsed['analysis'], $parsed['transcription'], $parsed['response'], $parsed['translation']);
+    } elseif ($mode === 'feedback' && empty($parsed['analysis'])) {
+        $parsed['analysis'] = $parsed['explanation'] ?? $parsed['response'] ?? '';
+        unset($parsed['explanation'], $parsed['response']);
+    } elseif ($mode === 'transcribe') {
+        // Clean up any extra fields Gemini added
+        unset($parsed['analysis'], $parsed['explanation'], $parsed['response']);
+    } elseif ($mode === 'ask' && empty($parsed['response'])) {
+        $parsed['response'] = $parsed['explanation'] ?? $parsed['analysis'] ?? '';
+        unset($parsed['explanation'], $parsed['analysis']);
+    }
+
+    // Include mode in response so frontend knows what to display
+    $parsed['_mode'] = $mode;
     json_response($parsed);
 }
 

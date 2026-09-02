@@ -726,34 +726,36 @@ export default function Notebook() {
               </div>
             )}
 
-            {analyzeResult && !analyzeResult.error && (
-              <>
-                {/* Transcription — show for transcribe and full modes */}
-                {analyzeResult.transcription && (analyzeResult._mode === 'transcribe' || analyzeResult._mode === 'full') && (
+            {analyzeResult && !analyzeResult.error && (() => {
+              const mode = analyzeResult._mode
+              const show = (field, ...modes) => analyzeResult[field] && (!mode || modes.includes(mode))
+              return <>
+                {/* Transcription */}
+                {show('transcription', 'transcribe', 'full') && (
                   <div className="notebook-analyze-section">
                     <h4>Transcription</h4>
                     <p className="notebook-analyze-arabic" dir="rtl">{analyzeResult.transcription}</p>
                   </div>
                 )}
 
-                {/* Translation — show for transcribe and full modes */}
-                {analyzeResult.translation && (analyzeResult._mode === 'transcribe' || analyzeResult._mode === 'full') && (
+                {/* Translation */}
+                {show('translation', 'transcribe', 'full') && (
                   <div className="notebook-analyze-section">
                     <h4>Translation</h4>
                     <p>{analyzeResult.translation}</p>
                   </div>
                 )}
 
-                {/* Explanation — explain mode only */}
-                {analyzeResult.explanation && analyzeResult._mode === 'explain' && (
+                {/* Explanation */}
+                {show('explanation', 'explain') && (
                   <div className="notebook-analyze-section">
                     <h4>Study Notes</h4>
                     <div className="notebook-analyze-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(analyzeResult.explanation) }} />
                   </div>
                 )}
 
-                {/* Response — ask mode only */}
-                {analyzeResult.response && analyzeResult._mode === 'ask' && (
+                {/* Response */}
+                {show('response', 'ask') && (
                   <div className="notebook-analyze-section">
                     <h4>Answer</h4>
                     <div className="notebook-analyze-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(analyzeResult.response) }} />
@@ -812,10 +814,10 @@ export default function Notebook() {
                   </div>
                 )}
 
-                {/* Tutor feedback — feedback and full modes */}
-                {analyzeResult.analysis && (analyzeResult._mode === 'feedback' || analyzeResult._mode === 'full') && (
+                {/* Tutor feedback */}
+                {show('analysis', 'feedback', 'full') && (
                   <div className="notebook-analyze-section">
-                    <h4>{analyzeResult._mode === 'feedback' ? 'Tutor Feedback' : 'Analysis'}</h4>
+                    <h4>{mode === 'feedback' ? 'Tutor Feedback' : 'Analysis'}</h4>
                     <div className="notebook-analyze-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(analyzeResult.analysis) }} />
                   </div>
                 )}
@@ -837,7 +839,7 @@ export default function Notebook() {
                   </div>
                 )}
               </>
-            )}
+            })()}
           </div>
 
           {/* Follow-up input */}
