@@ -14,8 +14,9 @@ import {
   getUserVotes,
   moderateContribution,
   deleteContribution,
+  addContributionToDictionary,
 } from '../lib/dataService'
-import { ThumbsUp, ThumbsDown, Check, X, Plus, AlertTriangle, Pencil, Trash2 } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, Check, X, Plus, AlertTriangle, Pencil, Trash2, BookPlus } from 'lucide-react'
 
 const ADMIN_EMAIL = 'dawoudhussein07@gmail.com'
 
@@ -493,7 +494,7 @@ const STATUS_COLORS = {
 }
 
 // ── Contribution card ─────────────────────────────────────────────────────────
-function ContributionCard({ contribution, userVote, onVote, onModerate, onEdit, onDelete, isAdmin, currentUserId, showStatus }) {
+function ContributionCard({ contribution, userVote, onVote, onModerate, onEdit, onDelete, onAddToDict, addedToDict, isAdmin, currentUserId, showStatus }) {
   const score   = contribution.vote_score || 0
   const isOwn   = contribution.submitted_by === currentUserId
   const canVote = !isOwn && contribution.status === 'pending'
@@ -558,16 +559,30 @@ function ContributionCard({ contribution, userVote, onVote, onModerate, onEdit, 
             </button>
           </div>
         )}
-        {/* Admin delete (for gemini words etc.) */}
-        {isAdmin && onDelete && (
-          <button
-            className="btn btn-sm btn-ghost"
-            style={{ padding: '4px 8px', color: 'var(--color-danger)', flexShrink: 0 }}
-            onClick={() => onDelete(contribution)}
-            title="Delete"
-          >
-            <Trash2 size={14} />
-          </button>
+        {/* Admin: add to dictionary + delete (for gemini words) */}
+        {isAdmin && onAddToDict && (
+          <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+            <button
+              className={`btn btn-sm${addedToDict ? ' btn-ghost' : ' btn-primary'}`}
+              style={{ padding: '4px 8px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              onClick={() => onAddToDict(contribution)}
+              disabled={addedToDict}
+              title={addedToDict ? 'Added to dictionary' : 'Add to dictionary'}
+            >
+              {addedToDict ? <Check size={13} /> : <BookPlus size={13} />}
+              {addedToDict ? 'In Dict' : 'Dict'}
+            </button>
+            {onDelete && (
+              <button
+                className="btn btn-sm btn-ghost"
+                style={{ padding: '4px 8px', color: 'var(--color-danger)' }}
+                onClick={() => onDelete(contribution)}
+                title="Delete"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -652,6 +667,7 @@ export default function Contributions() {
   const [showSubmit, setShowSubmit] = useState(false)
   const [modTarget,  setModTarget]  = useState(null)
   const [editTarget, setEditTarget] = useState(null)
+  const [dictAdded,  setDictAdded]  = useState(new Set()) // track IDs added to dictionary
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -719,6 +735,18 @@ export default function Contributions() {
       setItems(prev => prev.filter(c => c.id !== contribution.id))
     } catch (err) { console.error(err) }
   }
+  const handleAddToDict = async (contribution) => {
+    try {
+      await addContributionToDictionary(contribution.id)
+      setDictAdded(prev => new Set([...prev, contribution.id]))
+    } catch (err) {
+      if (err.message?.includes('Already in dictionary')) {
+        setDictAdded(prev => new Set([...prev, contribution.id]))
+      } else {
+        alert('Failed: ' + (err.message || 'Unknown error'))
+      }
+    }
+  }
 
   const EMPTY_MESSAGES = {
     pending:     'No pending contributions from the community',
@@ -780,6 +808,8 @@ export default function Contributions() {
               onModerate={handleModerate}
               onEdit={handleEdit}
               onDelete={section === 'gemini' ? handleDelete : undefined}
+              onAddToDict={section === 'gemini' ? handleAddToDict : undefined}
+              addedToDict={dictAdded.has(c.id)}
               isAdmin={isAdmin}
               currentUserId={currentUser?.id}
               showStatus={section === 'submissions'}

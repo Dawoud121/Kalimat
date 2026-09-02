@@ -236,6 +236,62 @@ if ($method === 'POST' && preg_match('#^/contributions/(\d+)/moderate$#', $path,
     json_response($contrib);
 }
 
+// POST /contributions/:id/to-dictionary — admin: add gemini word to dictionary
+if ($method === 'POST' && preg_match('#^/contributions/(\d+)/to-dictionary$#', $path, $m)) {
+    $payload = require_admin($config);
+    $contribId = (int)$m[1];
+
+    $stmt = $pdo->prepare('SELECT * FROM contributions WHERE id = ?');
+    $stmt->execute([$contribId]);
+    $contrib = $stmt->fetch();
+    if (!$contrib) json_response(['error' => 'Not found'], 404);
+
+    // Check if already in dictionary (by stripped diacritics)
+    $normalized = strip_arabic_diacritics(trim($contrib['arabic']));
+    $stmt = $pdo->prepare('SELECT id, arabic FROM dictionary');
+    $stmt->execute();
+    foreach ($stmt->fetchAll() as $d) {
+        if (strip_arabic_diacritics($d['arabic']) === $normalized) {
+            json_response(['error' => 'Already in dictionary', 'existingId' => (int)$d['id']], 409);
+        }
+    }
+
+    // Look up forms from the words table (if user added it to a deck)
+    $forms = [];
+    $exampleSentence = null;
+    $stmtW = $pdo->prepare("SELECT * FROM words WHERE arabic = ? LIMIT 1");
+    $stmtW->execute([trim($contrib['arabic'])]);
+    $wordRow = $stmtW->fetch();
+    if ($wordRow) {
+        $formEntries = [];
+        if (!empty($wordRow['past']))    $formEntries[] = ['type' => 'verb', 'label' => 'Past',    'arabic' => $wordRow['past']];
+        if (!empty($wordRow['present'])) $formEntries[] = ['type' => 'verb', 'label' => 'Present', 'arabic' => $wordRow['present']];
+        if (!empty($wordRow['command'])) $formEntries[] = ['type' => 'verb', 'label' => 'Command', 'arabic' => $wordRow['command']];
+        if (!empty($wordRow['masdar']))  $formEntries[] = ['type' => 'verb', 'label' => 'Masdar',  'arabic' => $wordRow['masdar']];
+        if (!empty($wordRow['singular']))$formEntries[] = ['type' => 'noun', 'label' => 'Singular','arabic' => $wordRow['singular']];
+        if (!empty($wordRow['dual']))    $formEntries[] = ['type' => 'noun', 'label' => 'Dual',    'arabic' => $wordRow['dual']];
+        if (!empty($wordRow['plural']))  $formEntries[] = ['type' => 'noun', 'label' => 'Plural',  'arabic' => $wordRow['plural']];
+        $forms = $formEntries;
+        $exampleSentence = $wordRow['example_sentence'] ?? null;
+    }
+
+    $stmt = $pdo->prepare('INSERT INTO dictionary (arabic, definition, root, pos, forms, example_sentence, sources) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    $stmt->execute([
+        $contrib['arabic'] ?? '',
+        $contrib['definition'] ?? '',
+        $contrib['root'] ?? null,
+        $contrib['pos'] ?? null,
+        json_encode($forms),
+        $exampleSentence,
+        json_encode(['gemini']),
+    ]);
+
+    $dictId = $pdo->lastInsertId();
+    $stmt = $pdo->prepare('SELECT * FROM dictionary WHERE id = ?');
+    $stmt->execute([$dictId]);
+    json_response($stmt->fetch(), 201);
+}
+
 // DELETE /contributions/:id — admin delete contribution
 if ($method === 'DELETE' && preg_match('#^/contributions/(\d+)$#', $path, $m)) {
     $payload = require_admin($config);

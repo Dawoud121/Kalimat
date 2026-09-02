@@ -664,6 +664,10 @@ export async function deleteContribution(contributionId) {
   return await api.del(`/contributions/${contributionId}`)
 }
 
+export async function addContributionToDictionary(contributionId) {
+  return await api.post(`/contributions/${contributionId}/to-dictionary`)
+}
+
 // ── Sentences ─────────────────────────────────────────────────────────────────
 
 export async function getSentencesForWord(wordId) {
