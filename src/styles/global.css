@@ -151,6 +151,7 @@ img {
 
 .main-wrapper {
   margin-left: var(--sidebar-collapsed-width);
+  padding-top: env(safe-area-inset-top, 0px);
   flex: 1;
   min-height: 100vh;
   display: flex;
@@ -237,6 +238,7 @@ body.has-secondary-sidebar .main-wrapper {
   left: 0;
   top: 0;
   bottom: 0;
+  padding-top: env(safe-area-inset-top, 0px);
   width: var(--sidebar-collapsed-width);
   background-color: var(--color-surface);
   border-right: 1px solid var(--color-border);
@@ -278,7 +280,7 @@ body.has-secondary-sidebar .main-wrapper {
   padding: clamp(4px, 0.4vw, 8px) clamp(8px, 0.8vw, 12px);
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: clamp(2px, 0.4vw, 4px);
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none; /* Firefox */
@@ -300,7 +302,7 @@ body.has-secondary-sidebar .main-wrapper {
   display: flex;
   align-items: center;
   gap: clamp(8px, 0.7vw, 12px);
-  padding: clamp(6px, 0.55vw, 9px) clamp(10px, 0.9vw, 14px);
+  padding: clamp(8px, 0.8vw, 12px) clamp(10px, 0.9vw, 14px);
   border-radius: var(--radius-md);
   color: var(--color-text-muted);
   font-size: clamp(0.78rem, 0.8vw, 0.9rem);
@@ -331,8 +333,8 @@ body.has-secondary-sidebar .main-wrapper {
 }
 
 .sidebar-nav-item .nav-icon {
-  width: clamp(15px, 1.2vw, 20px);
-  height: clamp(15px, 1.2vw, 20px);
+  width: clamp(18px, 1.5vw, 22px);
+  height: clamp(18px, 1.5vw, 22px);
   flex-shrink: 0;
   display: block;
 }
