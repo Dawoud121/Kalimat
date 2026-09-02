@@ -415,7 +415,7 @@ export default function Notebook() {
                 <select
                   className="form-input"
                   style={{ fontSize: '0.8rem', padding: '4px 8px', width: 'auto' }}
-                  value={selectedLesson.template || 'lined'}
+                  value={selectedLesson.template || 'arabic'}
                   onChange={e => handleTemplateChange(e.target.value)}
                 >
                   {TEMPLATES.map(t => (
@@ -428,7 +428,7 @@ export default function Notebook() {
               ref={canvasRef}
               lessonId={selectedLessonId}
               initialStrokes={strokes}
-              template={selectedLesson.template || 'lined'}
+              template={selectedLesson.template || 'arabic'}
             />
           </>
         ) : selectedLesson && strokes === null ? (

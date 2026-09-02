@@ -10,7 +10,7 @@ const LINE_COLOR = '#d0d8e0'
 const LINE_COLOR_DARK = '#2a2f36'
 const GRID_COLOR = '#d0d8e0'
 const GRID_COLOR_DARK = '#2a2f36'
-const MIN_ZOOM = 0.8
+const MIN_ZOOM = 1
 const MAX_ZOOM = 5
 const PAGE_PADDING_BOTTOM = 600 // blank space below last element
 const PAGE_BG = '#faf9f6'
@@ -230,7 +230,7 @@ function compressImage(file, maxDim = 800, quality = 0.7) {
 // ── Main Component ──
 const SNAP_DISTANCE = 10
 
-const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStrokes, template = 'lined' }, ref) {
+const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStrokes, template = 'arabic' }, ref) {
   const staticCanvasRef = useRef(null)
   const activeCanvasRef = useRef(null)
   const linesCanvasRef = useRef(null)
@@ -429,7 +429,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     ctx.fillRect(0, 0, w, h)
 
     // Draw template pattern
-    const tmpl = template || 'lined'
+    const tmpl = template || 'arabic'
     if (tmpl === 'blank') return
     if (tmpl === 'lined') drawLinedTemplate(ctx, w, h, v, dark)
     else if (tmpl === 'grid') drawGridTemplate(ctx, w, h, v, dark)
@@ -1527,7 +1527,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   }
 
   function drawTemplateOnExport(ctx, w, h) {
-    const tmpl = template || 'lined'
+    const tmpl = template || 'arabic'
     if (tmpl === 'blank') return
     ctx.strokeStyle = getIsDark() ? LINE_COLOR_DARK : LINE_COLOR
     ctx.lineWidth = 0.5

@@ -301,7 +301,7 @@ function get_db(array $config): PDO {
             user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             title       TEXT NOT NULL,
             date        TEXT DEFAULT (date('now')),
-            template    TEXT DEFAULT 'lined',
+            template    TEXT DEFAULT 'arabic',
             order_index INTEGER NOT NULL DEFAULT 0,
             created_at  TEXT DEFAULT (datetime('now'))
         );
@@ -352,7 +352,7 @@ function get_db(array $config): PDO {
     ");
 
     // Migration: add template column to existing notebook_lessons tables
-    try { $pdo->exec("ALTER TABLE notebook_lessons ADD COLUMN template TEXT DEFAULT 'lined'"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE notebook_lessons ADD COLUMN template TEXT DEFAULT 'arabic'"); } catch (Exception $e) {}
 
     return $pdo;
 }
