@@ -373,8 +373,19 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   // ── Viewport clamping ──
   function clampViewport() {
     const v = viewRef.current
-    // Page fills full width — just prevent scrolling past top-left origin
-    v.x = Math.min(0, v.x)
+    const wrapper = wrapperRef.current
+    if (!wrapper) return
+    const w = wrapper.clientWidth
+    // Horizontal: page starts at 0, extends to wrapper width in canvas space
+    // At zoom 1, content width = wrapper width, so no horizontal scroll needed
+    // At zoom > 1, allow scrolling but keep content within view
+    const contentW = w * v.zoom
+    if (contentW <= w) {
+      v.x = 0 // page fits, no scroll
+    } else {
+      v.x = Math.min(0, Math.max(w - contentW, v.x))
+    }
+    // Vertical: don't scroll above page top
     v.y = Math.min(0, v.y)
   }
 
