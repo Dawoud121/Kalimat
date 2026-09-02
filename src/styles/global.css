@@ -151,7 +151,6 @@ img {
 
 .main-wrapper {
   margin-left: var(--sidebar-collapsed-width);
-  padding-top: env(safe-area-inset-top, 0px);
   flex: 1;
   min-height: 100vh;
   display: flex;
@@ -238,7 +237,6 @@ body.has-secondary-sidebar .main-wrapper {
   left: 0;
   top: 0;
   bottom: 0;
-  padding-top: env(safe-area-inset-top, 0px);
   width: var(--sidebar-collapsed-width);
   background-color: var(--color-surface);
   border-right: 1px solid var(--color-border);
