@@ -305,13 +305,17 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   const textAreaRef = useRef(null)
 
   // Image selection state (move/resize)
-  const [selectedImage, setSelectedImage] = useState(null) // index into elementsRef
+  const [selectedImage, _setSelectedImage] = useState(null) // index into elementsRef
+  const selectedImageRef = useRef(null)
+  const setSelectedImage = (v) => { selectedImageRef.current = v; _setSelectedImage(v) }
   const imgDragRef = useRef(null) // { mode: 'move'|'resize', handle, startX, startY, origX, origY, origW, origH }
   const fileInputRef = useRef(null)
 
   // Lasso selection state
   const [lassoPath, setLassoPath] = useState(null) // array of {x,y} in canvas space while drawing
-  const [selectedIndices, setSelectedIndices] = useState(null) // Set of indices
+  const [selectedIndices, _setSelectedIndices] = useState(null) // Set of indices
+  const selectedIndicesRef = useRef(null)
+  const setSelectedIndices = (v) => { selectedIndicesRef.current = v; _setSelectedIndices(v) }
   const [selectionBounds, setSelectionBounds] = useState(null) // screen-space bounds
   const [showSelToolbar, setShowSelToolbar] = useState(false)
   const selDragRef = useRef(null) // { startX, startY, origPositions }
@@ -622,13 +626,15 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     ctx.clearRect(0, 0, c.width, c.height)
     applyViewTransform(ctx)
     elementsRef.current.forEach(el => drawElement(ctx, el, imageCacheRef.current))
-    // Draw selection highlight
-    if (selectedIndices && selectedIndices.size > 0) {
-      drawSelectionHighlight(ctx)
+    // Draw lasso selection highlight (use ref for immediate access)
+    const selIdx = selectedIndicesRef.current
+    if (selIdx && selIdx.size > 0) {
+      drawSelectionHighlight(ctx, selIdx)
     }
-    // Draw image selection handles
-    if (selectedImage !== null) {
-      const el = elementsRef.current[selectedImage]
+    // Draw image selection handles (use ref for immediate access)
+    const selImg = selectedImageRef.current
+    if (selImg !== null) {
+      const el = elementsRef.current[selImg]
       if (el?.type === 'image') {
         drawImageHandles(ctx, el)
       }
@@ -662,7 +668,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     ctx.restore()
   }
 
-  function drawSelectionHighlight(ctx) {
+  function drawSelectionHighlight(ctx, selIdx) {
     ctx.save()
     if (lassoPolygonRef.current && lassoPolygonRef.current.length > 2) {
       // Draw the lasso polygon shape
@@ -681,7 +687,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       ctx.setLineDash([6, 4])
       ctx.strokeStyle = '#1a73e8'
       ctx.lineWidth = 1.5 / viewRef.current.zoom
-      for (const idx of selectedIndices) {
+      for (const idx of selIdx) {
         const b = getElementBounds(elementsRef.current[idx])
         ctx.strokeRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4)
       }
@@ -774,11 +780,12 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
 
   // ── Selection bounds in screen space ──
   function updateSelectionBoundsScreen() {
-    if (!selectedIndices || selectedIndices.size === 0) {
+    const selIdx = selectedIndicesRef.current
+    if (!selIdx || selIdx.size === 0) {
       setSelectionBounds(null)
       return
     }
-    const cb = getSelectionBounds(elementsRef.current, selectedIndices)
+    const cb = getSelectionBounds(elementsRef.current, selIdx)
     const tl = canvasToScreen(cb.x, cb.y)
     const br = canvasToScreen(cb.x + cb.w, cb.y + cb.h)
     setSelectionBounds({ x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y })
