@@ -293,7 +293,8 @@ if ($method === 'POST' && $path === '/notebook/analyze') {
     $userPrompt = trim($body['prompt'] ?? 'Analyze this note');
     $history = $body['history'] ?? [];
 
-    if (!$imageData) json_response(['error' => 'No image provided'], 400);
+    // Image required for first analysis, optional for follow-ups
+    if (!$imageData && empty($history)) json_response(['error' => 'No image provided'], 400);
 
     // Build Gemini request
     $systemInstruction = <<<'PROMPT'
@@ -317,6 +318,8 @@ For a new image, return:
 * Preserve meaningful line breaks with \n.
 * Preserve relevant English text, headings, numbers, and mixed-language notes.
 * If a word is uncertain, give your best reading and mark it like "[word? 0.65]".
+* Treat spatially separate text as separate lines/items. Do not combine nearby words into the same sentence unless the layout clearly indicates they belong together.
+* If the page contains corrections, annotations or teacher markings in another colour, recognise them as corrections/annotations rather than merging them into the original sentence.
 * Mention important corrections or low-confidence readings in "analysis".
 
 "translation":

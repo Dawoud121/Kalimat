@@ -651,12 +651,16 @@ export default function Contributions() {
         const raw = await getContributions({ status: 'pending' })
         list = raw.filter(c => c.source !== 'sentence_flag')
       } else if (section === 'approved') {
-        // All community approved (excluding sentence flags)
+        // All community approved (excluding sentence flags and gemini)
         const raw = await getContributions({ status: 'approved' })
-        list = raw.filter(c => c.source !== 'sentence_flag')
+        list = raw.filter(c => c.source !== 'sentence_flag' && c.source !== 'gemini')
       } else if (section === 'submissions') {
         // User's own contributions at any status
         list = currentUser ? await getUserContributions(currentUser.id) : []
+      } else if (section === 'gemini' && isAdmin) {
+        // Admin-only: Gemini AI-added words
+        const raw = await getContributions({ status: 'approved' })
+        list = raw.filter(c => c.source === 'gemini')
       } else if (section === 'flagged' && isAdmin) {
         // Admin-only: sentence-flagged unknown words
         list = await getSentenceFlagContributions()
@@ -713,12 +717,14 @@ export default function Contributions() {
             {section === 'pending'     && 'Pending'}
             {section === 'approved'    && 'Approved'}
             {section === 'submissions' && 'My Submissions'}
+            {section === 'gemini'      && 'Gemini Words'}
             {section === 'flagged'     && 'Flagged Words'}
           </h1>
           <p className="page-subtitle">
             {section === 'pending'     && 'Community word suggestions awaiting review'}
             {section === 'approved'    && 'Words approved and added to the dictionary'}
             {section === 'submissions' && 'All contributions you have submitted'}
+            {section === 'gemini'      && 'Words added to decks via AI notebook analysis'}
             {section === 'flagged'     && 'Unknown words flagged from sentence approvals'}
           </p>
         </div>

@@ -30,6 +30,12 @@ const SECONDARY_SIDEBAR_CONFIG = {
     ],
     adminGroups: [
       {
+        label: 'AI',
+        items: [
+          { key: 'gemini', label: 'Gemini Words' },
+        ],
+      },
+      {
         label: 'MODERATION',
         items: [
           { key: 'flagged', label: 'Flagged Words' },
