@@ -19,6 +19,7 @@ import {
   ScrollText,
   FolderOpen,
   PenLine,
+  MessageSquarePlus,
 } from 'lucide-react'
 
 const ADMIN_EMAIL = 'dawoudhussein07@gmail.com'
@@ -128,16 +129,25 @@ export default function Sidebar() {
           )
         })}
 
-        {/* Admin-only link */}
+        {/* Admin-only links */}
         {currentUser?.email === ADMIN_EMAIL && (() => {
-          const isActive = location.pathname === '/admin'
+          const isAdminActive = location.pathname === '/admin'
+          const isContribActive = location.pathname === '/contributions'
           return (
             <>
               <div className="sidebar-divider" />
               <NavLink
+                to="/contributions"
+                title="Contributions"
+                className={`sidebar-nav-item${isContribActive ? ' active' : ''}`}
+              >
+                <MessageSquarePlus size={18} strokeWidth={1.75} className="nav-icon" />
+                <span className="nav-label">Contributions</span>
+              </NavLink>
+              <NavLink
                 to="/admin"
                 title="Admin"
-                className={`sidebar-nav-item admin-nav-item${isActive ? ' active' : ''}`}
+                className={`sidebar-nav-item admin-nav-item${isAdminActive ? ' active' : ''}`}
               >
                 <ShieldCheck size={18} strokeWidth={1.75} className="nav-icon" />
                 <span className="nav-label">Admin</span>

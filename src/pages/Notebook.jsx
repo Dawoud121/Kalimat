@@ -5,11 +5,12 @@ import {
   getNotebookClasses, createNotebookClass, updateNotebookClass, deleteNotebookClass,
   getNotebookLessons, createNotebookLesson, updateNotebookLesson, deleteNotebookLesson,
   getNotebookStrokes, updateLessonTemplate, analyzeNote, createWord, getUserDecks,
+  submitContribution,
 } from '../lib/dataService'
 import NotebookCanvas from '../components/notebook/NotebookCanvas'
 import {
   ChevronDown, ChevronRight, Plus, Pencil, Trash2, BookOpen, FileText, MoreVertical, X,
-  PanelLeftOpen, PanelLeftClose, Sparkles, Send, PlusCircle, Check,
+  PanelLeftOpen, PanelLeftClose, Sparkles, Send, PlusCircle, Check, RefreshCw,
 } from 'lucide-react'
 
 // Simple markdown to HTML (bold, italic, lists, line breaks)
@@ -73,6 +74,32 @@ export default function Notebook() {
 
   const canvasRef = useRef(null)
 
+  // Restore cached analysis when lesson changes
+  useEffect(() => {
+    if (!selectedLessonId) return
+    try {
+      const cached = localStorage.getItem(`kalimat_analysis_${selectedLessonId}`)
+      if (cached) {
+        const parsed = JSON.parse(cached)
+        setAnalyzeResult(parsed.result)
+        setAnalyzeHistory(parsed.history || [])
+        setAddedWords(new Set(parsed.addedWords || []))
+      }
+    } catch { /* ignore */ }
+  }, [selectedLessonId])
+
+  // Save analysis to localStorage when it changes
+  useEffect(() => {
+    if (!selectedLessonId || !analyzeResult || analyzeResult.error) return
+    try {
+      localStorage.setItem(`kalimat_analysis_${selectedLessonId}`, JSON.stringify({
+        result: analyzeResult,
+        history: analyzeHistory,
+        addedWords: [...addedWords],
+      }))
+    } catch { /* ignore */ }
+  }, [selectedLessonId, analyzeResult, analyzeHistory, addedWords])
+
   // Load classes on mount
   useEffect(() => {
     if (!currentUser) return
@@ -123,7 +150,7 @@ export default function Notebook() {
     setSelectedLesson(lesson)
     setStrokes(null)
     setSidebarOpen(false) // auto-close sidebar on selection
-    // Clear previous analysis
+    // Reset analysis state (useEffect will restore cached if available)
     setAnalyzeOpen(false)
     setAnalyzeResult(null)
     setAnalyzeHistory([])
@@ -252,13 +279,8 @@ export default function Notebook() {
   }, [menuOpen])
 
   // ── AI Analysis ──
-  const handleAnalyze = useCallback(async () => {
-    if (!canvasRef.current) return
-    // If we already have results, just toggle the panel
-    if (analyzeResult && !analyzeResult.error) {
-      setAnalyzeOpen(prev => !prev)
-      return
-    }
+  const runAnalysis = useCallback(async () => {
+    if (!canvasRef.current || !currentUser) return
     setAnalyzeOpen(true)
     setAnalyzing(true)
     setAnalyzeResult(null)
@@ -283,7 +305,24 @@ export default function Notebook() {
       setAnalyzeResult({ error: err.message || 'Analysis failed' })
     }
     setAnalyzing(false)
-  }, [analyzeResult, currentUser, selectedDeckId])
+  }, [currentUser, selectedDeckId])
+
+  const handleAnalyze = useCallback(() => {
+    // If we already have results, just toggle the panel
+    if (analyzeResult && !analyzeResult.error) {
+      setAnalyzeOpen(prev => !prev)
+      return
+    }
+    runAnalysis()
+  }, [analyzeResult, runAnalysis])
+
+  const handleRegenerate = useCallback(() => {
+    // Clear cached analysis and re-run
+    if (selectedLessonId) {
+      localStorage.removeItem(`kalimat_analysis_${selectedLessonId}`)
+    }
+    runAnalysis()
+  }, [selectedLessonId, runAnalysis])
 
   const handleFollowUp = useCallback(async () => {
     const prompt = analyzePrompt.trim()
@@ -321,12 +360,34 @@ export default function Notebook() {
   const handleAddWord = useCallback(async (word) => {
     if (!currentUser || !selectedDeckId || addedWords.has(word.arabic)) return
     try {
+      const forms = word.forms || {}
       await createWord(currentUser.id, {
         deckId: selectedDeckId,
         arabic: word.arabic,
         english: word.meaning,
         root: (word.root || '').replace(/\s/g, ''),
+        partOfSpeech: word.partOfSpeech || '',
+        exampleSentence: word.exampleSentence || '',
+        past: forms.past || '',
+        present: forms.present || '',
+        command: forms.command || '',
+        masdar: forms.masdar || '',
+        singular: forms.singular || '',
+        dual: forms.dual || '',
+        plural: forms.plural || '',
       })
+      // Log as contribution for admin tracking
+      try {
+        await submitContribution(currentUser.id, currentUser.username, {
+          type: 'new_word',
+          arabic: word.arabic,
+          definition: word.meaning,
+          root: (word.root || '').replace(/\s/g, ''),
+          pos: word.partOfSpeech || '',
+          source: 'gemini',
+          status: 'approved',
+        })
+      } catch { /* contribution logging is best-effort */ }
       setAddedWords(prev => new Set([...prev, word.arabic]))
     } catch (err) {
       console.error('Failed to add word:', err)
@@ -581,9 +642,19 @@ export default function Notebook() {
               <Sparkles size={16} />
               <span style={{ fontWeight: 600 }}>AI Analysis</span>
             </div>
-            <button className="btn btn-ghost btn-sm" onClick={() => setAnalyzeOpen(false)}>
-              <X size={16} />
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={handleRegenerate}
+                disabled={analyzing}
+                title="Re-analyze note"
+              >
+                <RefreshCw size={14} />
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setAnalyzeOpen(false)}>
+                <X size={16} />
+              </button>
+            </div>
           </div>
 
           <div className="notebook-analyze-body" ref={analyzeChatRef}>
@@ -602,11 +673,11 @@ export default function Notebook() {
 
             {analyzeResult && !analyzeResult.error && (
               <>
-                {/* Diacritics */}
-                {analyzeResult.diacritics && (
+                {/* Transcription with harakat */}
+                {analyzeResult.transcription && (
                   <div className="notebook-analyze-section">
-                    <h4>With Harakat</h4>
-                    <p className="notebook-analyze-arabic" dir="rtl">{analyzeResult.diacritics}</p>
+                    <h4>Transcription</h4>
+                    <p className="notebook-analyze-arabic" dir="rtl">{analyzeResult.transcription}</p>
                   </div>
                 )}
 
@@ -639,19 +710,31 @@ export default function Notebook() {
                     <div className="notebook-analyze-words">
                       {analyzeResult.words.map((w, i) => (
                         <div key={i} className="notebook-analyze-word">
-                          <div className="notebook-analyze-word-info">
-                            <span className="notebook-analyze-word-arabic" dir="rtl">{w.arabic}</span>
-                            <span className="notebook-analyze-word-root" dir="rtl">{w.root}</span>
-                            <span className="notebook-analyze-word-meaning">{w.meaning}</span>
+                          <div className="notebook-analyze-word-top">
+                            <div className="notebook-analyze-word-info">
+                              <span className="notebook-analyze-word-arabic" dir="rtl">{w.arabic}</span>
+                              {w.partOfSpeech && <span className="notebook-analyze-word-pos">{w.partOfSpeech}</span>}
+                              {w.root && <span className="notebook-analyze-word-root" dir="rtl">{w.root}</span>}
+                            </div>
+                            <button
+                              className={`btn btn-sm${addedWords.has(w.arabic) ? ' btn-ghost' : ' btn-primary'}`}
+                              onClick={() => handleAddWord(w)}
+                              disabled={addedWords.has(w.arabic) || !selectedDeckId}
+                              title={addedWords.has(w.arabic) ? 'Added' : 'Add to deck'}
+                            >
+                              {addedWords.has(w.arabic) ? <Check size={14} /> : <PlusCircle size={14} />}
+                            </button>
                           </div>
-                          <button
-                            className={`btn btn-sm${addedWords.has(w.arabic) ? ' btn-ghost' : ' btn-primary'}`}
-                            onClick={() => handleAddWord(w)}
-                            disabled={addedWords.has(w.arabic) || !selectedDeckId}
-                            title={addedWords.has(w.arabic) ? 'Added' : 'Add to deck'}
-                          >
-                            {addedWords.has(w.arabic) ? <Check size={14} /> : <PlusCircle size={14} />}
-                          </button>
+                          <div className="notebook-analyze-word-meaning">{w.meaning}</div>
+                          {w.exampleSentence && (
+                            <div className="notebook-analyze-word-example">
+                              <span dir="rtl">{w.exampleSentence}</span>
+                              {w.exampleTranslation && <span className="notebook-analyze-word-example-en">{w.exampleTranslation}</span>}
+                            </div>
+                          )}
+                          {w.confidence != null && w.confidence < 0.8 && (
+                            <span className="notebook-analyze-word-confidence">Confidence: {Math.round(w.confidence * 100)}%</span>
+                          )}
                         </div>
                       ))}
                     </div>

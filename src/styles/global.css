@@ -275,10 +275,10 @@ body.has-secondary-sidebar .main-wrapper {
 
 .sidebar-nav {
   flex: 1;
-  padding: clamp(4px, 0.4vw, 8px) clamp(8px, 0.8vw, 12px);
+  padding: clamp(2px, 0.3vw, 6px) clamp(8px, 0.8vw, 12px);
   display: flex;
   flex-direction: column;
-  gap: clamp(2px, 0.4vw, 4px);
+  gap: clamp(1px, 0.2vh, 3px);
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none; /* Firefox */
@@ -291,7 +291,7 @@ body.has-secondary-sidebar .main-wrapper {
 .sidebar-divider {
   height: 1px;
   background: var(--color-border);
-  margin: clamp(2px, 0.3vw, 4px) clamp(8px, 0.8vw, 12px);
+  margin: clamp(1px, 0.2vh, 3px) clamp(8px, 0.8vw, 12px);
   flex-shrink: 0;
   transition: margin 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -300,7 +300,7 @@ body.has-secondary-sidebar .main-wrapper {
   display: flex;
   align-items: center;
   gap: clamp(8px, 0.7vw, 12px);
-  padding: clamp(8px, 0.8vw, 12px) clamp(10px, 0.9vw, 14px);
+  padding: clamp(6px, 0.6vh, 10px) clamp(10px, 0.9vw, 14px);
   border-radius: var(--radius-md);
   color: var(--color-text-muted);
   font-size: clamp(0.78rem, 0.8vw, 0.9rem);
@@ -338,7 +338,7 @@ body.has-secondary-sidebar .main-wrapper {
 }
 
 .sidebar-footer {
-  padding: clamp(6px, 0.6vw, 10px) clamp(8px, 0.8vw, 12px);
+  padding: clamp(4px, 0.4vh, 8px) clamp(8px, 0.8vw, 12px);
   border-top: 1px solid var(--color-border);
   transition: padding-left 0.22s cubic-bezier(0.4, 0, 0.2, 1), padding-right 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -466,7 +466,7 @@ body.has-secondary-sidebar .main-wrapper {
   align-items: center;
   justify-content: flex-start;
   /* padding-left reserves space past the absolutely-positioned icon */
-  padding: clamp(10px, 0.9vw, 16px) clamp(10px, 0.9vw, 16px) clamp(10px, 0.9vw, 16px) calc((var(--sidebar-collapsed-width) + 26px) / 2);
+  padding: clamp(8px, 0.7vh, 14px) clamp(10px, 0.9vw, 16px) clamp(8px, 0.7vh, 14px) calc((var(--sidebar-collapsed-width) + 26px) / 2);
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -5321,20 +5321,23 @@ input[type="checkbox"] {
 }
 
 .notebook-analyze-word {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
   padding: 8px 10px;
   background: var(--color-bg);
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
 }
 
+.notebook-analyze-word-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .notebook-analyze-word-info {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex: 1;
   min-width: 0;
 }
@@ -5343,6 +5346,17 @@ input[type="checkbox"] {
   font-family: 'Noto Naskh Arabic', serif;
   font-size: 1rem;
   font-weight: 600;
+  flex-shrink: 0;
+}
+
+.notebook-analyze-word-pos {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-brand);
+  background: var(--color-brand-muted);
+  padding: 1px 5px;
+  border-radius: 3px;
   flex-shrink: 0;
 }
 
@@ -5356,9 +5370,29 @@ input[type="checkbox"] {
 .notebook-analyze-word-meaning {
   font-size: 0.8rem;
   color: var(--color-text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin-top: 2px;
+}
+
+.notebook-analyze-word-example {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  font-family: 'Noto Naskh Arabic', serif;
+  line-height: 1.6;
+}
+
+.notebook-analyze-word-example-en {
+  display: block;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
+.notebook-analyze-word-confidence {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.7rem;
+  color: var(--color-warning);
 }
 
 .notebook-analyze-correction {
