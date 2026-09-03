@@ -72,18 +72,20 @@ function saveFavColors(colors) {
 }
 
 /* ── Dropdown component for pen/highlighter settings ── */
-function ToolDropdown({ color, onColorChange, thickness, onThicknessChange, editingFavSlot, onFavAssign, onClose }) {
+function ToolDropdown({ color, onColorChange, thickness, onThicknessChange, editingFavSlot, onFavAssign, onClose, parentRef }) {
   const dropdownRef = useRef(null)
 
   useEffect(() => {
     const handler = (e) => {
+      // Don't close if clicking the parent button (it handles its own toggle)
+      if (parentRef?.current && parentRef.current.contains(e.target)) return
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
         onClose()
       }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [onClose])
+  }, [onClose, parentRef])
 
   return (
     <div className="notebook-pen-dropdown" ref={dropdownRef}>
@@ -246,6 +248,7 @@ export default function NotebookToolbar({
               editingFavSlot={editingFavSlot}
               onFavAssign={handleFavAssign}
               onClose={closePenDropdown}
+              parentRef={penBtnRef}
             />
           )}
         </div>
@@ -267,6 +270,7 @@ export default function NotebookToolbar({
               editingFavSlot={editingFavSlot}
               onFavAssign={handleFavAssign}
               onClose={closeHighlighterDropdown}
+              parentRef={highlighterBtnRef}
             />
           )}
         </div>
