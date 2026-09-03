@@ -313,9 +313,8 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   const [smoothing, setSmoothing] = useState(true)
   const [eraserSize, setEraserSize] = useState('medium') // small/medium/large
   const [textFontSize, setTextFontSize] = useState(24) // independent of pen thickness
-  const [undoCount, setUndoCount] = useState(0)
-  const [redoCount, setRedoCount] = useState(0)
-  const [elementCount, setElementCount] = useState(0)
+  const [canUndo, setCanUndo] = useState(false)
+  const [canRedo, setCanRedo] = useState(false)
 
   // Text editing state
   const [editingText, setEditingText] = useState(null) // { idx, el, isNew }
@@ -418,9 +417,8 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       viewRef.current.x = (wrapper.clientWidth - pageScreenW) / 2
     }
     setZoomLevel(initialZoom)
-    setElementCount(loaded.length)
-    setUndoCount(0)
-    setRedoCount(0)
+    setCanUndo(false)
+    setCanRedo(false)
     setSelectedIndices(null)
     setSelectionBounds(null)
     setShowSelToolbar(false)
@@ -809,9 +807,10 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   }, [lessonId])
 
   function updateCounts() {
-    setElementCount(elementsRef.current.length)
-    setUndoCount(undoStackRef.current.length)
-    setRedoCount(redoStackRef.current.length)
+    const hasUndo = undoStackRef.current.length > 0
+    const hasRedo = redoStackRef.current.length > 0
+    setCanUndo(prev => prev === hasUndo ? prev : hasUndo)
+    setCanRedo(prev => prev === hasRedo ? prev : hasRedo)
   }
 
   // ── Coordinate conversion ──
@@ -2210,7 +2209,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
             return newVal
           })
         }}
-        canUndo={undoCount > 0} canRedo={redoCount > 0}
+        canUndo={canUndo} canRedo={canRedo}
         onUndo={handleUndo} onRedo={handleRedo}
         onClear={handleClear}
         onExportPNG={exportAsPNG}
