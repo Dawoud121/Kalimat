@@ -329,7 +329,9 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   const fileInputRef = useRef(null)
 
   // Lasso selection state
-  const [lassoPath, setLassoPath] = useState(null) // array of {x,y} in canvas space while drawing
+  const [lassoPath, _setLassoPath] = useState(null) // array of {x,y} in canvas space while drawing
+  const lassoPathRef = useRef(null)
+  const setLassoPath = (v) => { const val = typeof v === 'function' ? v(lassoPathRef.current) : v; lassoPathRef.current = val; _setLassoPath(val) }
   const [selectedIndices, _setSelectedIndices] = useState(null) // Set of indices
   const selectedIndicesRef = useRef(null)
   const setSelectedIndices = (v) => { selectedIndicesRef.current = v; _setSelectedIndices(v) }
@@ -383,12 +385,12 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       const bottom = b.y + b.h
       if (bottom > maxY) maxY = bottom
     }
-    // At least 1 page, add extra page if content is near bottom
     return Math.max(1, Math.ceil((maxY + PAGE_PADDING_BOTTOM) / PAGE_HEIGHT))
   }
 
   function getPageBottom() {
-    return getPageCount() * PAGE_HEIGHT + (getPageCount() - 1) * PAGE_GAP
+    const n = getPageCount()
+    return n * PAGE_HEIGHT + (n - 1) * PAGE_GAP
   }
 
   // Get the default zoom that fits the page width to the viewport
@@ -1208,7 +1210,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       points: [{ x: startPos.x, y: startPos.y, pressure: e.pressure || 0.5 }],
     }
     isDrawingRef.current = true
-  }, [tool, color, thickness, selectedIndices, selectedImage, eraserSize, textFontSize])
+  }, [tool, color, thickness, eraserSize, textFontSize])
 
   const handlePointerMove = useCallback((e) => {
     if (e.pointerType === 'touch') {
@@ -1327,7 +1329,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     }
 
     // Lasso path drawing
-    if (tool === 'lasso' && lassoPath) {
+    if (tool === 'lasso' && lassoPathRef.current) {
       setLassoPath(prev => [...prev, pos])
       // Draw lasso on active canvas
       clearActiveCanvas()
@@ -1337,9 +1339,10 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       ctx.setLineDash([4 / viewRef.current.zoom, 4 / viewRef.current.zoom])
       ctx.strokeStyle = '#1a73e8'
       ctx.lineWidth = 1.5 / viewRef.current.zoom
+      const lp = lassoPathRef.current
       ctx.beginPath()
-      ctx.moveTo(lassoPath[0].x, lassoPath[0].y)
-      for (const p of lassoPath) ctx.lineTo(p.x, p.y)
+      ctx.moveTo(lp[0].x, lp[0].y)
+      for (const p of lp) ctx.lineTo(p.x, p.y)
       ctx.lineTo(pos.x, pos.y)
       ctx.stroke()
       ctx.restore()
@@ -1436,7 +1439,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     const ctx = activeCanvasRef.current.getContext('2d')
     applyViewTransform(ctx)
     drawStroke(ctx, currentStrokeRef.current)
-  }, [tool, lassoPath, eraserSize])
+  }, [tool, eraserSize])
 
   const handlePointerUp = useCallback((e) => {
     if (e.pointerType === 'touch') {
@@ -1478,9 +1481,9 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       if (selDragRef.current.moved) {
         undoStackRef.current.push({
           type: 'transform',
-          indices: [...selectedIndices],
+          indices: [...selectedIndicesRef.current],
           before: selDragRef.current.origPositions,
-          after: [...selectedIndices].map(idx => {
+          after: [...selectedIndicesRef.current].map(idx => {
             const el = elementsRef.current[idx]
             if (el.type === 'text' || el.type === 'image') return { idx, x: el.x, y: el.y }
             return { idx, points: el.points.map(p => ({ ...p })) }
@@ -1498,8 +1501,9 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     }
 
     // Lasso path complete
-    if (tool === 'lasso' && lassoPath && lassoPath.length > 2) {
-      const polygon = lassoPath
+    const lp = lassoPathRef.current
+    if (tool === 'lasso' && lp && lp.length > 2) {
+      const polygon = lp
       const hits = new Set()
       elementsRef.current.forEach((el, idx) => {
         if (!el.type || el.type === 'stroke') {
@@ -1541,10 +1545,9 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     const stroke = currentStrokeRef.current
     currentStrokeRef.current = null
 
+    // Single-point stroke → render as a dot (duplicate the point so drawStroke works)
     if (stroke.points.length < 2) {
-      clearActiveCanvas()
-      straightenRef.current = false
-      return
+      stroke.points.push({ ...stroke.points[0] })
     }
 
     // Line straightening: if held still for 500ms, replace with straight line
@@ -1589,7 +1592,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
 
     scheduleSave()
     updateCounts()
-  }, [tool, smoothing, lassoPath, selectedIndices])
+  }, [tool, smoothing])
 
   // ── Undo / Redo ──
   const handleUndo = useCallback(() => {
