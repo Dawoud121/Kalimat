@@ -5091,6 +5091,28 @@ input[type="checkbox"] {
   cursor: crosshair;
 }
 
+/* Cursor indicators */
+.notebook-cursor-circle {
+  position: absolute;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.06);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 50;
+}
+[data-theme="dark"] .notebook-cursor-circle {
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.06);
+}
+.notebook-cursor-dot {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 50;
+}
+
 .notebook-image-menu {
   position: absolute;
   z-index: 1000;

@@ -1,9 +1,9 @@
-// v2.9.2
+// v2.9.4
 import React, { useRef, useState, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react'
 import NotebookToolbar from './NotebookToolbar'
 import SelectionToolbar from './SelectionToolbar'
 import { saveNotebookStrokes } from '../../lib/dataService'
-import { Trash2, FlipHorizontal2, FlipVertical2, Copy, Lock, Unlock } from 'lucide-react'
+import { Trash2, FlipHorizontal2, FlipVertical2, Copy, Lock, Unlock, ArrowUpToLine, ArrowDownToLine } from 'lucide-react'
 
 const HIGHLIGHTER_OPACITY = 0.3
 const LINE_SPACING = 32
@@ -13,10 +13,12 @@ const GRID_COLOR = '#d0d8e0'
 const GRID_COLOR_DARK = '#2a2f36'
 const MIN_ZOOM = 1
 const MAX_ZOOM = 5
-const PAGE_PADDING_BOTTOM = 600 // blank space below last element
+const PAGE_PADDING_BOTTOM = 200 // blank space below last element (was 600)
 const PAGE_BG = '#faf9f6'
 const PAGE_BG_DARK = '#1e1e1e'
 const EXPORT_WIDTH = 800 // fixed width for PNG/PDF exports
+const ERASER_SIZES = { small: 8, medium: 16, large: 28 }
+const LASSO_MOVE_THRESHOLD = 6 // px in canvas space before drag registers
 
 // ── Ramer-Douglas-Peucker point simplification ──
 function rdpSimplify(points, tolerance) {
@@ -305,6 +307,8 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   })
   const [thickness, setThickness] = useState(4)
   const [smoothing, setSmoothing] = useState(true)
+  const [eraserSize, setEraserSize] = useState('medium') // small/medium/large
+  const [textFontSize, setTextFontSize] = useState(24) // independent of pen thickness
   const [undoCount, setUndoCount] = useState(0)
   const [redoCount, setRedoCount] = useState(0)
   const [elementCount, setElementCount] = useState(0)
@@ -328,6 +332,9 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   const [selectionBounds, setSelectionBounds] = useState(null) // screen-space bounds
   const [showSelToolbar, setShowSelToolbar] = useState(false)
   const selDragRef = useRef(null) // { startX, startY, origPositions }
+
+  // Cursor position for tool preview (eraser circle, pen/highlighter dot)
+  const [cursorPos, setCursorPos] = useState(null)
 
   // Image context menu state
   const [imageMenu, setImageMenu] = useState(null) // { x, y, idx }
@@ -378,8 +385,10 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     elementsRef.current = loaded
     undoStackRef.current = []
     redoStackRef.current = []
-    viewRef.current = { x: 0, y: 0, zoom: 1 }
-    setZoomLevel(1)
+    // Restore saved zoom for this lesson
+    const savedZoom = parseFloat(localStorage.getItem(`kalimat_zoom_${lessonId}`)) || 1
+    viewRef.current = { x: 0, y: 0, zoom: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, savedZoom)) }
+    setZoomLevel(viewRef.current.zoom)
     setElementCount(loaded.length)
     setUndoCount(0)
     setRedoCount(0)
@@ -503,6 +512,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       }
       clampViewport()
       setZoomLevel(v.zoom)
+      localStorage.setItem(`kalimat_zoom_${lessonId}`, v.zoom)
       redrawAll()
       updateSelectionBoundsScreen()
     }
@@ -650,6 +660,8 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
         drawImageHandles(ctx, el)
       }
     }
+    // Page break lines
+    drawPageBreakLines(ctx)
   }
 
   function drawImageHandles(ctx, el) {
@@ -706,6 +718,25 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       }
     }
     ctx.setLineDash([])
+    ctx.restore()
+  }
+
+  function drawPageBreakLines(ctx) {
+    const wrapper = wrapperRef.current
+    if (!wrapper) return
+    const pageW = wrapper.clientWidth
+    const pdfPageH = pageW * 1.414
+    const pageBottom = getPageBottom()
+    ctx.save()
+    ctx.setLineDash([8 / viewRef.current.zoom, 4 / viewRef.current.zoom])
+    ctx.strokeStyle = 'rgba(200, 200, 200, 0.5)'
+    ctx.lineWidth = 1 / viewRef.current.zoom
+    for (let y = pdfPageH; y < pageBottom; y += pdfPageH) {
+      ctx.beginPath()
+      ctx.moveTo(0, y)
+      ctx.lineTo(pageW, y)
+      ctx.stroke()
+    }
     ctx.restore()
   }
 
@@ -840,6 +871,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       v.y = g.startViewY + (midY - g.startY)
       clampViewport()
       setZoomLevel(newZoom)
+      localStorage.setItem(`kalimat_zoom_${lessonId}`, newZoom)
       redrawAll()
       updateSelectionBoundsScreen()
     }
@@ -968,7 +1000,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
         x: pos.x,
         y: pos.y,
         text: '',
-        fontSize: thickness * 5 + 10, // map thickness to font size: 20/30/45
+        fontSize: textFontSize,
         color: color,
         width: 300,
       }
@@ -1106,7 +1138,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     if (tool === 'eraser') {
       const removed = []
       elementsRef.current = elementsRef.current.filter(s => {
-        if (hitTestElement(s, pos.x, pos.y, 12 / viewRef.current.zoom)) {
+        if (hitTestElement(s, pos.x, pos.y, ERASER_SIZES[eraserSize] / viewRef.current.zoom)) {
           removed.push(s)
           return false
         }
@@ -1151,7 +1183,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       points: [{ x: startPos.x, y: startPos.y, pressure: e.pressure || 0.5 }],
     }
     isDrawingRef.current = true
-  }, [tool, color, thickness, selectedIndices, selectedImage])
+  }, [tool, color, thickness, selectedIndices, selectedImage, eraserSize, textFontSize])
 
   const handlePointerMove = useCallback((e) => {
     if (e.pointerType === 'touch') {
@@ -1171,6 +1203,12 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       } else {
         return
       }
+    }
+
+    // Track cursor for eraser circle / pen dot preview
+    if (tool === 'eraser' || tool === 'pen' || tool === 'highlighter') {
+      const rect = activeCanvasRef.current?.getBoundingClientRect()
+      if (rect) setCursorPos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
     }
 
     if (!isDrawingRef.current) return
@@ -1221,9 +1259,10 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     if (tool === 'lasso' && selDragRef.current) {
       const dx = pos.x - selDragRef.current.startX
       const dy = pos.y - selDragRef.current.startY
-      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) selDragRef.current.moved = true
+      if (Math.abs(dx) > LASSO_MOVE_THRESHOLD || Math.abs(dy) > LASSO_MOVE_THRESHOLD) selDragRef.current.moved = true
       for (const orig of selDragRef.current.origPositions) {
         const el = elementsRef.current[orig.idx]
+        if (el.locked) continue
         if (el.type === 'text' || el.type === 'image') {
           el.x = orig.x + dx
           el.y = orig.y + dy
@@ -1264,7 +1303,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     if (tool === 'eraser') {
       const removed = []
       elementsRef.current = elementsRef.current.filter(s => {
-        if (hitTestElement(s, pos.x, pos.y, 12 / viewRef.current.zoom)) {
+        if (hitTestElement(s, pos.x, pos.y, ERASER_SIZES[eraserSize] / viewRef.current.zoom)) {
           removed.push(s)
           return false
         }
@@ -1309,6 +1348,11 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       previewCtx.moveTo(first.x, first.y)
       previewCtx.lineTo(endPos.x, endPos.y)
       previewCtx.stroke()
+      // Snap indicator dot at origin
+      previewCtx.fillStyle = '#0fa76e'
+      previewCtx.beginPath()
+      previewCtx.arc(first.x, first.y, 4 / viewRef.current.zoom, 0, Math.PI * 2)
+      previewCtx.fill()
       previewCtx.restore()
       return
     }
@@ -1345,7 +1389,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     const ctx = activeCanvasRef.current.getContext('2d')
     applyViewTransform(ctx)
     drawStroke(ctx, currentStrokeRef.current)
-  }, [tool, lassoPath])
+  }, [tool, lassoPath, eraserSize])
 
   const handlePointerUp = useCallback((e) => {
     if (e.pointerType === 'touch') {
@@ -1516,14 +1560,18 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       elementsRef.current = action.strokes
       redoStackRef.current.push(action)
     } else if (action.type === 'transform') {
-      for (const orig of action.before) {
+      // Support both action.before (array) and action.items (flip/lock)
+      const items = action.items || action.before
+      for (const orig of items) {
         const el = elementsRef.current[orig.idx]
         if (!el) continue
-        if (el.type === 'text' || el.type === 'image') {
-          el.x = orig.x; el.y = orig.y
-          if (orig.width != null) { el.width = orig.width; el.height = orig.height }
-        }
-        else if (orig.points) el.points = orig.points.map(p => ({ ...p }))
+        const src = orig.before || orig // flip/lock uses {idx, before, after}, lasso/move uses {idx, x, y, ...}
+        if (src.x != null) { el.x = src.x; el.y = src.y }
+        if (src.width != null) { el.width = src.width; el.height = src.height }
+        if (src.flipH != null) el.flipH = src.flipH
+        if (src.flipV != null) el.flipV = src.flipV
+        if (src.locked != null) el.locked = src.locked
+        if (src.points) el.points = src.points.map(p => ({ ...p }))
       }
       redoStackRef.current.push(action)
     } else if (action.type === 'deleteSelected') {
@@ -1573,14 +1621,18 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       elementsRef.current = []
       undoStackRef.current.push(action)
     } else if (action.type === 'transform') {
-      for (const snap of action.after) {
+      // Support both action.after (array) and action.items (flip/lock)
+      const items = action.items || action.after
+      for (const snap of items) {
         const el = elementsRef.current[snap.idx]
         if (!el) continue
-        if (el.type === 'text' || el.type === 'image') {
-          el.x = snap.x; el.y = snap.y
-          if (snap.width != null) { el.width = snap.width; el.height = snap.height }
-        }
-        else if (snap.points) el.points = snap.points.map(p => ({ ...p }))
+        const src = snap.after || snap // flip/lock uses {idx, before, after}, lasso/move uses {idx, x, y, ...}
+        if (src.x != null) { el.x = src.x; el.y = src.y }
+        if (src.width != null) { el.width = src.width; el.height = src.height }
+        if (src.flipH != null) el.flipH = src.flipH
+        if (src.flipV != null) el.flipV = src.flipV
+        if (src.locked != null) el.locked = src.locked
+        if (src.points) el.points = src.points.map(p => ({ ...p }))
       }
       undoStackRef.current.push(action)
     } else if (action.type === 'deleteSelected') {
@@ -1818,21 +1870,45 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   function handleImageFlip(idx, axis) {
     const el = elementsRef.current[idx]
     if (!el || el.locked) return
-    const before = { idx, x: el.x, y: el.y, width: el.width, height: el.height }
-    // For a single image, flip is conceptual — we'll add a scaleX/scaleY flag
-    // But since we draw with drawImage, we need to use CSS transforms or store flip state
-    // Simpler: use canvas transform on the image element
+    const beforeFlipH = el.flipH, beforeFlipV = el.flipV
     if (axis === 'h') el.flipH = !el.flipH
     else el.flipV = !el.flipV
+    undoStackRef.current.push({ type: 'transform', items: [{ idx, before: { flipH: beforeFlipH, flipV: beforeFlipV }, after: { flipH: el.flipH, flipV: el.flipV } }] })
+    redoStackRef.current = []
     setImageMenu(null)
     redrawAll()
     scheduleSave()
+    updateCounts()
   }
 
   function handleImageLock(idx) {
     const el = elementsRef.current[idx]
     if (!el) return
+    const wasLocked = el.locked
     el.locked = !el.locked
+    undoStackRef.current.push({ type: 'transform', items: [{ idx, before: { locked: wasLocked }, after: { locked: el.locked } }] })
+    redoStackRef.current = []
+    setImageMenu(null)
+    redrawAll()
+    scheduleSave()
+    updateCounts()
+  }
+
+  function handleImageBringForward(idx) {
+    if (idx >= elementsRef.current.length - 1) return
+    const arr = elementsRef.current
+    ;[arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]]
+    setSelectedImage(idx + 1)
+    setImageMenu(null)
+    redrawAll()
+    scheduleSave()
+  }
+
+  function handleImageSendBackward(idx) {
+    if (idx <= 0) return
+    const arr = elementsRef.current
+    ;[arr[idx], arr[idx - 1]] = [arr[idx - 1], arr[idx]]
+    setSelectedImage(idx - 1)
     setImageMenu(null)
     redrawAll()
     scheduleSave()
@@ -2063,12 +2139,24 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
         tool={tool} onToolChange={setTool}
         color={color} onColorChange={setColor}
         thickness={thickness} onThicknessChange={setThickness}
-        smoothing={smoothing} onSmoothingToggle={() => setSmoothing(s => !s)}
+        smoothing={smoothing} onSmoothingToggle={() => {
+          setSmoothing(s => {
+            const newVal = !s
+            elementsRef.current.forEach(el => {
+              if (!el.type || el.type === 'stroke') el.smooth = newVal
+            })
+            redrawAll()
+            scheduleSave()
+            return newVal
+          })
+        }}
         canUndo={undoCount > 0} canRedo={redoCount > 0}
         onUndo={handleUndo} onRedo={handleRedo}
         onClear={handleClear}
         onExportPNG={exportAsPNG}
         onExportPDF={exportAsPDF}
+        eraserSize={eraserSize} onEraserSizeChange={setEraserSize}
+        textFontSize={textFontSize} onTextFontSizeChange={setTextFontSize}
         onAnalyze={onAnalyze}
         analyzing={analyzing}
         hasAnalysis={hasAnalysis}
@@ -2086,11 +2174,31 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
         <canvas
           ref={activeCanvasRef}
           className="notebook-canvas notebook-canvas-active"
+          style={{ cursor: (tool === 'pen' || tool === 'highlighter' || tool === 'eraser') ? 'none' : (tool === 'cursor' ? 'default' : 'crosshair') }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
+          onPointerLeave={() => setCursorPos(null)}
         />
+        {cursorPos && tool === 'eraser' && (
+          <div className="notebook-cursor-circle" style={{
+            left: cursorPos.x,
+            top: cursorPos.y,
+            width: ERASER_SIZES[eraserSize] * 2 * viewRef.current.zoom,
+            height: ERASER_SIZES[eraserSize] * 2 * viewRef.current.zoom,
+          }} />
+        )}
+        {cursorPos && (tool === 'pen' || tool === 'highlighter') && (
+          <div className="notebook-cursor-dot" style={{
+            left: cursorPos.x,
+            top: cursorPos.y,
+            width: (thickness + 2) * viewRef.current.zoom,
+            height: (thickness + 2) * viewRef.current.zoom,
+            backgroundColor: color,
+            opacity: tool === 'highlighter' ? 0.5 : 0.7,
+          }} />
+        )}
         {/* Text editing overlay */}
         {editingText && (
           <textarea
@@ -2124,6 +2232,12 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
           >
             <button onClick={() => handleImageDuplicate(imageMenu.idx)}>
               <Copy size={15} /> Duplicate
+            </button>
+            <button onClick={() => handleImageBringForward(imageMenu.idx)}>
+              <ArrowUpToLine size={15} /> Bring Forward
+            </button>
+            <button onClick={() => handleImageSendBackward(imageMenu.idx)}>
+              <ArrowDownToLine size={15} /> Send Backward
             </button>
             <button onClick={() => handleImageFlip(imageMenu.idx, 'h')}>
               <FlipHorizontal2 size={15} /> Flip Horizontal

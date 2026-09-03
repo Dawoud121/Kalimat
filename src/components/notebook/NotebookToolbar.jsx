@@ -1,4 +1,4 @@
-// v2.9.2
+// v2.9.4
 import React, { useState, useEffect, useRef } from 'react'
 import { Pen, Highlighter, Eraser, Undo2, Redo2, Trash2, Lasso, Type, ImagePlus, Spline, Download, Sparkles, Languages, BookOpenText, GraduationCap, ScanSearch, MessageCircleQuestion, MousePointer2 } from 'lucide-react'
 
@@ -31,6 +31,8 @@ export default function NotebookToolbar({
   color, onColorChange,
   thickness, onThicknessChange,
   smoothing, onSmoothingToggle,
+  eraserSize, onEraserSizeChange,
+  textFontSize, onTextFontSizeChange,
   canUndo, canRedo, onUndo, onRedo,
   onClear,
   onExportPNG, onExportPDF,
@@ -137,6 +139,45 @@ export default function NotebookToolbar({
                 title={t.label}
               >
                 <span className="notebook-thickness-dot" style={{ width: t.value + 4, height: t.value + 4 }} />
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Eraser size options */}
+      {tool === 'eraser' && (
+        <>
+          <div className="notebook-toolbar-divider" />
+          <div className="notebook-toolbar-group">
+            {[['small', 'S'], ['medium', 'M'], ['large', 'L']].map(([size, label]) => (
+              <button
+                key={size}
+                className={`notebook-tool-btn${eraserSize === size ? ' active' : ''}`}
+                onClick={() => onEraserSizeChange(size)}
+                title={`Eraser ${label}`}
+                style={{ fontSize: 12, fontWeight: 600, minWidth: 28 }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {/* Text font size */}
+      {tool === 'text' && (
+        <>
+          <div className="notebook-toolbar-divider" />
+          <div className="notebook-toolbar-group">
+            {[16, 20, 24, 32, 40].map(sz => (
+              <button
+                key={sz}
+                className={`notebook-tool-btn${textFontSize === sz ? ' active' : ''}`}
+                onClick={() => onTextFontSizeChange(sz)}
+                title={`${sz}px`}
+                style={{ fontSize: 11, fontWeight: 600, minWidth: 28 }}
+              >
+                {sz}
               </button>
             ))}
           </div>
