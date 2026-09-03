@@ -1,4 +1,4 @@
-// v2.9.4
+// v2.9.5
 import React, { useRef, useState, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react'
 import NotebookToolbar from './NotebookToolbar'
 import SelectionToolbar from './SelectionToolbar'
@@ -11,7 +11,7 @@ const LINE_COLOR = '#d0d8e0'
 const LINE_COLOR_DARK = '#2a2f36'
 const GRID_COLOR = '#d0d8e0'
 const GRID_COLOR_DARK = '#2a2f36'
-const MIN_ZOOM = 1
+const MIN_ZOOM = 0.25
 const MAX_ZOOM = 5
 const PAGE_PADDING_BOTTOM = 200 // blank space below last element (was 600)
 const PAGE_BG = '#faf9f6'
@@ -478,17 +478,22 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     const wrapper = wrapperRef.current
     if (!wrapper) return
     const w = wrapper.clientWidth
-    // Horizontal: page starts at 0, extends to wrapper width in canvas space
-    // At zoom 1, content width = wrapper width, so no horizontal scroll needed
-    // At zoom > 1, allow scrolling but keep content within view
+    const h = wrapper.clientHeight
     const contentW = w * v.zoom
     if (contentW <= w) {
-      v.x = 0 // page fits, no scroll
+      // Zoomed out — center the page horizontally
+      v.x = (w - contentW) / 2
     } else {
       v.x = Math.min(0, Math.max(w - contentW, v.x))
     }
-    // Vertical: don't scroll above page top
-    v.y = Math.min(0, v.y)
+    // Vertical: when zoomed out, allow seeing the top with some margin
+    const contentH = getPageBottom() * v.zoom
+    if (contentH <= h) {
+      // Entire page fits vertically — center it or keep at top
+      v.y = Math.max(0, Math.min((h - contentH) / 2, v.y))
+    } else {
+      v.y = Math.min(0, v.y)
+    }
   }
 
   // ── Wheel zoom/scroll ──
@@ -539,9 +544,29 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     ctx.clearRect(0, 0, c.width, c.height)
     ctx.scale(dpr, dpr)
 
-    // Fill entire canvas with page background
-    ctx.fillStyle = dark ? PAGE_BG_DARK : PAGE_BG
-    ctx.fillRect(0, 0, w, h)
+    if (v.zoom < 1) {
+      // Zoomed out — show grey workspace behind page
+      ctx.fillStyle = dark ? '#141414' : '#e0e0e0'
+      ctx.fillRect(0, 0, w, h)
+      // Draw page as a white rectangle with shadow
+      const pageW = w * v.zoom
+      const pageH = getPageBottom() * v.zoom
+      const px = v.x
+      const py = v.y
+      // Page shadow
+      ctx.save()
+      ctx.shadowColor = 'rgba(0,0,0,0.2)'
+      ctx.shadowBlur = 12
+      ctx.shadowOffsetX = 0
+      ctx.shadowOffsetY = 2
+      ctx.fillStyle = dark ? PAGE_BG_DARK : PAGE_BG
+      ctx.fillRect(px, py, pageW, pageH)
+      ctx.restore()
+    } else {
+      // Fill entire canvas with page background
+      ctx.fillStyle = dark ? PAGE_BG_DARK : PAGE_BG
+      ctx.fillRect(0, 0, w, h)
+    }
 
     // Draw template pattern
     const tmpl = template || 'arabic'
@@ -1062,7 +1087,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       // Check if clicking on an existing image — select it for move/resize
       if (selectedImage !== null) {
         const selEl = elementsRef.current[selectedImage]
-        if (selEl?.type === 'image') {
+        if (selEl?.type === 'image' && !selEl.locked) {
           const handle = getResizeHandle(selEl, pos.x, pos.y, viewRef.current.zoom)
           if (handle) {
             imgDragRef.current = {
@@ -1080,13 +1105,15 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
         const el = elementsRef.current[i]
         if (el.type === 'image' && hitTestElement(el, pos.x, pos.y, 0)) {
           setSelectedImage(i)
-          imgDragRef.current = {
-            mode: 'move', handle: null,
-            startX: pos.x, startY: pos.y,
-            origX: el.x, origY: el.y,
-            origW: el.width, origH: el.height,
+          if (!el.locked) {
+            imgDragRef.current = {
+              mode: 'move', handle: null,
+              startX: pos.x, startY: pos.y,
+              origX: el.x, origY: el.y,
+              origW: el.width, origH: el.height,
+            }
+            isDrawingRef.current = true
           }
-          isDrawingRef.current = true
           return
         }
       }

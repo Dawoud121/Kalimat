@@ -5265,6 +5265,137 @@ input[type="checkbox"] {
   border-color: var(--color-border-medium);
 }
 
+/* ── Pen/Highlighter dropdown ────────────────────────────────────────── */
+.notebook-pen-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  padding: 12px;
+  z-index: 200;
+  min-width: 220px;
+}
+
+.notebook-pen-dropdown-label {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-bottom: 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.notebook-pen-dropdown-colors {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.notebook-pen-dropdown-color {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.12s, border-color 0.12s;
+}
+
+.notebook-pen-dropdown-color:hover {
+  transform: scale(1.15);
+}
+
+.notebook-pen-dropdown-color.active {
+  border-color: var(--color-text);
+}
+
+.notebook-pen-dropdown-color[style*="background: #ffffff"],
+.notebook-pen-dropdown-color[style*="background:#ffffff"] {
+  border-color: var(--color-border-medium);
+}
+
+.notebook-pen-dropdown-sizes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.notebook-pen-dropdown-size {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.notebook-pen-dropdown-size:hover {
+  background: var(--color-hover);
+}
+
+.notebook-pen-dropdown-size.active {
+  background: var(--color-brand-muted);
+  border-color: var(--color-brand);
+}
+
+.notebook-pen-dropdown-hint {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  margin-top: 8px;
+  font-style: italic;
+}
+
+/* ── Favorite color slots ────────────────────────────────────────────── */
+.notebook-fav-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  margin: 0 1px;
+  transition: border-color 0.12s, transform 0.12s, box-shadow 0.12s;
+}
+
+.notebook-fav-swatch:hover {
+  transform: scale(1.15);
+}
+
+.notebook-fav-swatch.active {
+  border-color: var(--color-text);
+  transform: scale(1.15);
+}
+
+.notebook-fav-swatch.editing {
+  box-shadow: 0 0 0 2px var(--color-brand);
+  border-color: var(--color-brand);
+}
+
+/* ── Color indicator dot on pen/highlighter buttons ──────────────────── */
+.notebook-tool-btn-with-indicator {
+  position: relative;
+}
+
+.notebook-tool-color-indicator {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid rgba(128,128,128,0.3);
+}
+
 /* ── Thickness buttons ────────────────────────────────────────────────── */
 .notebook-thickness-btn {
   display: flex;
