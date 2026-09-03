@@ -5069,6 +5069,9 @@ input[type="checkbox"] {
   background: #faf9f6;
   overflow: hidden;
   outline: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 [data-theme="dark"] .notebook-canvas-wrapper {
@@ -5086,6 +5089,47 @@ input[type="checkbox"] {
 .notebook-canvas-active {
   touch-action: none;
   cursor: crosshair;
+}
+
+.notebook-image-menu {
+  position: absolute;
+  z-index: 1000;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  padding: 4px;
+  min-width: 160px;
+  animation: menu-fade-in 0.12s ease-out;
+}
+
+.notebook-image-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  color: var(--color-text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.notebook-image-menu button:hover {
+  background: var(--color-bg-hover);
+}
+
+.notebook-image-menu button.danger {
+  color: var(--color-danger);
+}
+
+.notebook-image-menu .menu-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 0;
 }
 
 .notebook-zoom-indicator {

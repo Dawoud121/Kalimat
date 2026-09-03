@@ -3,6 +3,7 @@ import React, { useRef, useState, useEffect, useCallback, useImperativeHandle, f
 import NotebookToolbar from './NotebookToolbar'
 import SelectionToolbar from './SelectionToolbar'
 import { saveNotebookStrokes } from '../../lib/dataService'
+import { Trash2, FlipHorizontal2, FlipVertical2, Copy, Lock, Unlock } from 'lucide-react'
 
 const HIGHLIGHTER_OPACITY = 0.3
 const LINE_SPACING = 32
@@ -131,7 +132,15 @@ function drawImageElement(ctx, el, imageCache) {
   if (!el.src) return
   const img = imageCache?.get(el.src)
   if (img && img.complete) {
-    ctx.drawImage(img, el.x, el.y, el.width, el.height)
+    if (el.flipH || el.flipV) {
+      ctx.save()
+      ctx.translate(el.x + el.width / 2, el.y + el.height / 2)
+      ctx.scale(el.flipH ? -1 : 1, el.flipV ? -1 : 1)
+      ctx.drawImage(img, -el.width / 2, -el.height / 2, el.width, el.height)
+      ctx.restore()
+    } else {
+      ctx.drawImage(img, el.x, el.y, el.width, el.height)
+    }
   } else {
     // placeholder
     ctx.save()
@@ -320,6 +329,8 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   const [showSelToolbar, setShowSelToolbar] = useState(false)
   const selDragRef = useRef(null) // { startX, startY, origPositions }
 
+  // Image context menu state
+  const [imageMenu, setImageMenu] = useState(null) // { x, y, idx }
 
   useImperativeHandle(ref, () => ({
     save: () => saveNow(),
@@ -645,25 +656,27 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     const z = viewRef.current.zoom
     const handleSize = 8 / z
     ctx.save()
-    // Dashed border
+    // Dashed border — orange if locked, blue if unlocked
     ctx.setLineDash([6 / z, 4 / z])
-    ctx.strokeStyle = '#1a73e8'
+    ctx.strokeStyle = el.locked ? '#e68a00' : '#1a73e8'
     ctx.lineWidth = 2 / z
     ctx.strokeRect(el.x, el.y, el.width, el.height)
     ctx.setLineDash([])
-    // Corner handles
-    ctx.fillStyle = '#fff'
-    ctx.strokeStyle = '#1a73e8'
-    ctx.lineWidth = 1.5 / z
-    const corners = [
-      [el.x, el.y],
-      [el.x + el.width, el.y],
-      [el.x, el.y + el.height],
-      [el.x + el.width, el.y + el.height],
-    ]
-    for (const [cx, cy] of corners) {
-      ctx.fillRect(cx - handleSize / 2, cy - handleSize / 2, handleSize, handleSize)
-      ctx.strokeRect(cx - handleSize / 2, cy - handleSize / 2, handleSize, handleSize)
+    if (!el.locked) {
+      // Corner handles (only for unlocked)
+      ctx.fillStyle = '#fff'
+      ctx.strokeStyle = '#1a73e8'
+      ctx.lineWidth = 1.5 / z
+      const corners = [
+        [el.x, el.y],
+        [el.x + el.width, el.y],
+        [el.x, el.y + el.height],
+        [el.x + el.width, el.y + el.height],
+      ]
+      for (const [cx, cy] of corners) {
+        ctx.fillRect(cx - handleSize / 2, cy - handleSize / 2, handleSize, handleSize)
+        ctx.strokeRect(cx - handleSize / 2, cy - handleSize / 2, handleSize, handleSize)
+      }
     }
     ctx.restore()
   }
@@ -842,6 +855,8 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
 
   // ── Pointer handlers ──
   const handlePointerDown = useCallback((e) => {
+    // Close image context menu on any click
+    setImageMenu(null)
     // Ignore right-click — let contextmenu handler deal with it
     if (e.button === 2) return
 
@@ -878,10 +893,11 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
 
       // Cursor: allow touch to select/move/resize images
       if (tool === 'cursor') {
+        setImageMenu(null)
         // Check resize handles on selected image
         if (selectedImageRef.current !== null) {
           const selEl = elementsRef.current[selectedImageRef.current]
-          if (selEl?.type === 'image') {
+          if (selEl?.type === 'image' && !selEl.locked) {
             const handle = getResizeHandle(selEl, pos.x, pos.y, viewRef.current.zoom)
             if (handle) {
               e.preventDefault()
@@ -905,13 +921,15 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
             e.preventDefault()
             activeCanvasRef.current?.setPointerCapture(e.pointerId)
             setSelectedImage(i)
-            imgDragRef.current = {
-              mode: 'move', handle: null,
-              startX: pos.x, startY: pos.y,
-              origX: el.x, origY: el.y,
-              origW: el.width, origH: el.height,
+            if (!el.locked) {
+              imgDragRef.current = {
+                mode: 'move', handle: null,
+                startX: pos.x, startY: pos.y,
+                origX: el.x, origY: el.y,
+                origW: el.width, origH: el.height,
+              }
+              isDrawingRef.current = true
             }
-            isDrawingRef.current = true
             panRef.current = { active: false }
             return
           }
@@ -960,10 +978,12 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
 
     // ── Cursor tool — select, move, resize any element ──
     if (tool === 'cursor') {
+      // Close image menu if open
+      setImageMenu(null)
       // Check if clicking a resize handle on currently selected image first
       if (selectedImage !== null) {
         const selEl = elementsRef.current[selectedImage]
-        if (selEl?.type === 'image') {
+        if (selEl?.type === 'image' && !selEl.locked) {
           const handle = getResizeHandle(selEl, pos.x, pos.y, viewRef.current.zoom)
           if (handle) {
             imgDragRef.current = {
@@ -983,13 +1003,15 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
         if (hitTestElement(el, pos.x, pos.y, el.type === 'image' ? 0 : 8 / viewRef.current.zoom)) {
           if (el.type === 'image') {
             setSelectedImage(i)
-            imgDragRef.current = {
-              mode: 'move', handle: null,
-              startX: pos.x, startY: pos.y,
-              origX: el.x, origY: el.y,
-              origW: el.width, origH: el.height,
+            if (!el.locked) {
+              imgDragRef.current = {
+                mode: 'move', handle: null,
+                startX: pos.x, startY: pos.y,
+                origX: el.x, origY: el.y,
+                origW: el.width, origH: el.height,
+              }
+              isDrawingRef.current = true
             }
-            isDrawingRef.current = true
             return
           }
           if (el.type === 'text') {
@@ -1761,6 +1783,61 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     updateCounts()
   }
 
+  // ── Image context menu actions ──
+  function handleImageDelete(idx) {
+    const el = elementsRef.current[idx]
+    if (!el) return
+    elementsRef.current.splice(idx, 1)
+    undoStackRef.current.push({ type: 'deleteSelected', items: [{ idx, el }] })
+    redoStackRef.current = []
+    setSelectedImage(null)
+    setImageMenu(null)
+    redrawAll()
+    scheduleSave()
+    updateCounts()
+  }
+
+  function handleImageDuplicate(idx) {
+    const el = elementsRef.current[idx]
+    if (!el) return
+    const clone = JSON.parse(JSON.stringify(el))
+    if (clone.id) clone.id = crypto.randomUUID()
+    clone.x += 20; clone.y += 20
+    clone.locked = false
+    elementsRef.current.push(clone)
+    undoStackRef.current.push({ type: 'draw', stroke: clone })
+    redoStackRef.current = []
+    if (clone.src) preloadImage(clone.src)
+    setSelectedImage(elementsRef.current.length - 1)
+    setImageMenu(null)
+    redrawAll()
+    scheduleSave()
+    updateCounts()
+  }
+
+  function handleImageFlip(idx, axis) {
+    const el = elementsRef.current[idx]
+    if (!el || el.locked) return
+    const before = { idx, x: el.x, y: el.y, width: el.width, height: el.height }
+    // For a single image, flip is conceptual — we'll add a scaleX/scaleY flag
+    // But since we draw with drawImage, we need to use CSS transforms or store flip state
+    // Simpler: use canvas transform on the image element
+    if (axis === 'h') el.flipH = !el.flipH
+    else el.flipV = !el.flipV
+    setImageMenu(null)
+    redrawAll()
+    scheduleSave()
+  }
+
+  function handleImageLock(idx) {
+    const el = elementsRef.current[idx]
+    if (!el) return
+    el.locked = !el.locked
+    setImageMenu(null)
+    redrawAll()
+    scheduleSave()
+  }
+
   // ── Keyboard handler (Delete, paste) ──
   useEffect(() => {
     const wrapper = wrapperRef.current
@@ -1811,16 +1888,37 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       }
     }
 
-    // Don't prevent default on contextmenu — let the native menu show (with Paste option on iPad)
+    // Context menu: show image menu if cursor tool + clicking on image, otherwise native menu
+    const handleContextMenu = (e) => {
+      if (tool !== 'cursor' && tool !== 'image') return // let native menu show
+      const rect = activeCanvasRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const pos = screenToCanvas(e.clientX, e.clientY)
+      // Check if right-clicking on an image
+      for (let i = elementsRef.current.length - 1; i >= 0; i--) {
+        const el = elementsRef.current[i]
+        if (el.type === 'image' && hitTestElement(el, pos.x, pos.y, 0)) {
+          e.preventDefault()
+          setSelectedImage(i)
+          setImageMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, idx: i })
+          redrawAll()
+          return
+        }
+      }
+      // No image hit — let native menu show (for paste etc)
+    }
+
     wrapper.addEventListener('keydown', handleKeyDown)
+    wrapper.addEventListener('contextmenu', handleContextMenu)
     document.addEventListener('paste', handlePaste)
     // Make wrapper focusable for keyboard events
     if (!wrapper.getAttribute('tabindex')) wrapper.setAttribute('tabindex', '-1')
     return () => {
       wrapper.removeEventListener('keydown', handleKeyDown)
+      wrapper.removeEventListener('contextmenu', handleContextMenu)
       document.removeEventListener('paste', handlePaste)
     }
-  }, [lessonId, editingText])
+  }, [lessonId, editingText, tool])
 
   // ── Export ──
   function exportAsPNG() {
@@ -2016,6 +2114,35 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
             onFlipV={handleSelFlipV}
             onClose={() => { setSelectedIndices(null); setSelectionBounds(null); setShowSelToolbar(false) }}
           />
+        )}
+        {/* Image context menu */}
+        {imageMenu && (
+          <div
+            className="notebook-image-menu"
+            style={{ left: imageMenu.x, top: imageMenu.y }}
+            onPointerDown={e => e.stopPropagation()}
+          >
+            <button onClick={() => handleImageDuplicate(imageMenu.idx)}>
+              <Copy size={15} /> Duplicate
+            </button>
+            <button onClick={() => handleImageFlip(imageMenu.idx, 'h')}>
+              <FlipHorizontal2 size={15} /> Flip Horizontal
+            </button>
+            <button onClick={() => handleImageFlip(imageMenu.idx, 'v')}>
+              <FlipVertical2 size={15} /> Flip Vertical
+            </button>
+            <div className="menu-divider" />
+            <button onClick={() => handleImageLock(imageMenu.idx)}>
+              {elementsRef.current[imageMenu.idx]?.locked
+                ? <><Unlock size={15} /> Unlock</>
+                : <><Lock size={15} /> Lock</>
+              }
+            </button>
+            <div className="menu-divider" />
+            <button className="danger" onClick={() => handleImageDelete(imageMenu.idx)}>
+              <Trash2 size={15} /> Delete
+            </button>
+          </div>
         )}
       </div>
       {zoomLevel !== 1 && (
