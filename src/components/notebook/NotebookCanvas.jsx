@@ -568,14 +568,23 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       ctx.fillRect(0, 0, w, h)
     }
 
-    // Draw template pattern
+    // Draw template pattern — clip to page bounds when zoomed out
     const tmpl = template || 'arabic'
     if (tmpl === 'blank') return
+    if (v.zoom < 1) {
+      ctx.save()
+      const pageW = w * v.zoom
+      const pageH = getPageBottom() * v.zoom
+      ctx.beginPath()
+      ctx.rect(v.x, v.y, pageW, pageH)
+      ctx.clip()
+    }
     if (tmpl === 'lined') drawLinedTemplate(ctx, w, h, v, dark)
     else if (tmpl === 'grid') drawGridTemplate(ctx, w, h, v, dark)
     else if (tmpl === 'dotted') drawDottedTemplate(ctx, w, h, v, dark)
     else if (tmpl === 'arabic') drawArabicTemplate(ctx, w, h, v, dark)
     else drawLinedTemplate(ctx, w, h, v, dark) // fallback
+    if (v.zoom < 1) ctx.restore()
   }
 
   function drawLinedTemplate(ctx, w, h, v, dark) {

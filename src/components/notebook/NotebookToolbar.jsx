@@ -51,7 +51,10 @@ const QUICK_THICKNESSES = [
   { value: 7, label: 'Thick' },
 ]
 
-const DEFAULT_FAV_COLORS = ['#000000', '#1a73e8', '#d45656', '#0fa76e']
+function getDefaultFavColors() {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark'
+  return [dark ? '#ffffff' : '#000000', '#1a73e8', '#d45656', '#0fa76e']
+}
 
 function loadFavColors() {
   try {
@@ -61,7 +64,7 @@ function loadFavColors() {
       if (Array.isArray(parsed) && parsed.length === 4) return parsed
     }
   } catch {}
-  return [...DEFAULT_FAV_COLORS]
+  return getDefaultFavColors()
 }
 
 function saveFavColors(colors) {
