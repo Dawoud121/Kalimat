@@ -1,4 +1,4 @@
-// v2.9.5
+// v2.9.6
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
@@ -6,7 +6,7 @@ import ModalPortal from '../components/ModalPortal'
 import { applyTheme } from '../App'
 import { submitFeedback } from '../lib/dataService'
 import { X, AlertTriangle, Check, Sun, Moon, Monitor, Info, LogOut, MessageSquare } from 'lucide-react'
-const APP_VERSION = '2.9.5'
+const APP_VERSION = '2.9.6'
 
 const FEEDBACK_TYPES = [
   { value: 'bug',     label: 'Bug Report' },

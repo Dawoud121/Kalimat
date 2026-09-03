@@ -1,4 +1,4 @@
-// v2.9.5
+// v2.9.6
 import React, { useRef, useState, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react'
 import NotebookToolbar from './NotebookToolbar'
 import SelectionToolbar from './SelectionToolbar'
@@ -297,6 +297,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   const holdTimerRef = useRef(null)
   const lastMoveTimeRef = useRef(0)
   const straightenRef = useRef(false)
+  const lastDrawnIndexRef = useRef(0) // incremental stroke rendering
 
   // Viewport transform
   const viewRef = useRef({ x: 0, y: 0, zoom: 1 })
@@ -1198,9 +1199,11 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     }
 
     straightenRef.current = false
+    lastDrawnIndexRef.current = 0
     lastMoveTimeRef.current = Date.now()
     if (holdTimerRef.current) clearTimeout(holdTimerRef.current)
 
+    clearActiveCanvas()
     currentStrokeRef.current = {
       tool,
       color,
@@ -1434,10 +1437,40 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       }
     }, 500)
 
-    clearActiveCanvas()
-    const ctx = activeCanvasRef.current.getContext('2d')
-    applyViewTransform(ctx)
-    drawStroke(ctx, currentStrokeRef.current)
+    // Incremental stroke rendering — only draw new segments
+    const stroke = currentStrokeRef.current
+    const pts = stroke.points
+    const fromIdx = lastDrawnIndexRef.current
+    if (pts.length > 1 && fromIdx < pts.length - 1) {
+      const ctx = activeCanvasRef.current.getContext('2d')
+      applyViewTransform(ctx)
+      ctx.save()
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      ctx.strokeStyle = stroke.color
+
+      if (stroke.tool === 'highlighter' || stroke.smooth) {
+        // Highlighter needs single-path stroke for uniform alpha; smooth needs full Bezier
+        clearActiveCanvas()
+        const ctx2 = activeCanvasRef.current.getContext('2d')
+        applyViewTransform(ctx2)
+        drawStroke(ctx2, stroke)
+      } else {
+        // Pressure-sensitive: draw only new segments
+        for (let i = Math.max(fromIdx, 1); i < pts.length; i++) {
+          const p0 = pts[i - 1], p1 = pts[i]
+          const pressure = (p0.pressure + p1.pressure) / 2
+          ctx.lineWidth = stroke.width * (0.3 + 0.7 * pressure)
+          ctx.globalAlpha = stroke.opacity ?? 1
+          ctx.beginPath()
+          ctx.moveTo(p0.x, p0.y)
+          ctx.lineTo(p1.x, p1.y)
+          ctx.stroke()
+        }
+      }
+      ctx.restore()
+      lastDrawnIndexRef.current = pts.length - 1
+    }
   }, [tool, eraserSize])
 
   const handlePointerUp = useCallback((e) => {
