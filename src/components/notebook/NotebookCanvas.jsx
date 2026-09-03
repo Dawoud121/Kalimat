@@ -13,10 +13,14 @@ const GRID_COLOR = '#d0d8e0'
 const GRID_COLOR_DARK = '#2a2f36'
 const MIN_ZOOM = 0.25
 const MAX_ZOOM = 5
-const PAGE_PADDING_BOTTOM = 200 // blank space below last element (was 600)
+const PAGE_PADDING_BOTTOM = 200 // blank space below last element
 const PAGE_BG = '#faf9f6'
 const PAGE_BG_DARK = '#1e1e1e'
-const EXPORT_WIDTH = 800 // fixed width for PNG/PDF exports
+const WORKSPACE_BG = '#e0e0e0'
+const WORKSPACE_BG_DARK = '#141414'
+const PAGE_WIDTH = 800 // fixed A4 page width in canvas coords
+const PAGE_HEIGHT = Math.round(PAGE_WIDTH * 1.414) // A4 ratio ≈ 1131
+const PAGE_GAP = 20 // gap between pages in canvas coords
 const ERASER_SIZES = { small: 8, medium: 16, large: 28 }
 const LASSO_MOVE_THRESHOLD = 6 // px in canvas space before drag registers
 
@@ -354,7 +358,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       }
       if (contentBottom === 0) contentBottom = 400 // empty page fallback
       contentBottom += 40 // small margin
-      const w = wrapperRef.current?.clientWidth || EXPORT_WIDTH
+      const w = PAGE_WIDTH
       const offscreen = document.createElement('canvas')
       offscreen.width = w * 2
       offscreen.height = contentBottom * 2
@@ -368,15 +372,27 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     },
   }))
 
-  // ── Get page bottom (dynamic based on content) ──
-  function getPageBottom() {
-    let maxY = 400 // minimum page height
+  // ── Get total page count and content bottom ──
+  function getPageCount() {
+    let maxY = 0
     for (const el of elementsRef.current) {
       const b = getElementBounds(el)
       const bottom = b.y + b.h
       if (bottom > maxY) maxY = bottom
     }
-    return maxY + PAGE_PADDING_BOTTOM
+    // At least 1 page, add extra page if content is near bottom
+    return Math.max(1, Math.ceil((maxY + PAGE_PADDING_BOTTOM) / PAGE_HEIGHT))
+  }
+
+  function getPageBottom() {
+    return getPageCount() * PAGE_HEIGHT + (getPageCount() - 1) * PAGE_GAP
+  }
+
+  // Get the default zoom that fits the page width to the viewport
+  function getFitZoom() {
+    const wrapper = wrapperRef.current
+    if (!wrapper) return 1
+    return wrapper.clientWidth / PAGE_WIDTH
   }
 
   // ── Init elements from props ──
@@ -385,10 +401,18 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     elementsRef.current = loaded
     undoStackRef.current = []
     redoStackRef.current = []
-    // Restore saved zoom for this lesson
-    const savedZoom = parseFloat(localStorage.getItem(`kalimat_zoom_${lessonId}`)) || 1
-    viewRef.current = { x: 0, y: 0, zoom: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, savedZoom)) }
-    setZoomLevel(viewRef.current.zoom)
+    // Restore saved zoom or fit to width
+    const savedZoom = parseFloat(localStorage.getItem(`kalimat_zoom_${lessonId}`))
+    const fitZoom = getFitZoom()
+    const initialZoom = savedZoom ? Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, savedZoom)) : fitZoom
+    viewRef.current = { x: 0, y: 0, zoom: initialZoom }
+    // Center page horizontally
+    const wrapper = wrapperRef.current
+    if (wrapper) {
+      const pageScreenW = PAGE_WIDTH * initialZoom
+      viewRef.current.x = (wrapper.clientWidth - pageScreenW) / 2
+    }
+    setZoomLevel(initialZoom)
     setElementCount(loaded.length)
     setUndoCount(0)
     setRedoCount(0)
@@ -477,20 +501,21 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     const v = viewRef.current
     const wrapper = wrapperRef.current
     if (!wrapper) return
-    const w = wrapper.clientWidth
-    const h = wrapper.clientHeight
-    const contentW = w * v.zoom
-    if (contentW <= w) {
-      // Zoomed out — center the page horizontally
-      v.x = (w - contentW) / 2
-    } else {
-      v.x = Math.min(0, Math.max(w - contentW, v.x))
-    }
-    // Vertical: when zoomed out, allow seeing the top with some margin
+    const viewW = wrapper.clientWidth
+    const viewH = wrapper.clientHeight
+    const pageScreenW = PAGE_WIDTH * v.zoom
     const contentH = getPageBottom() * v.zoom
-    if (contentH <= h) {
-      // Entire page fits vertically — center it or keep at top
-      v.y = Math.max(0, Math.min((h - contentH) / 2, v.y))
+
+    // Horizontal: center page if it fits, otherwise constrain scroll
+    if (pageScreenW <= viewW) {
+      v.x = (viewW - pageScreenW) / 2
+    } else {
+      v.x = Math.min(0, Math.max(viewW - pageScreenW, v.x))
+    }
+
+    // Vertical: don't scroll above page top; if all pages fit, allow centering
+    if (contentH <= viewH) {
+      v.y = Math.max(0, Math.min((viewH - contentH) / 2, v.y))
     } else {
       v.y = Math.min(0, v.y)
     }
@@ -536,130 +561,110 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     if (!c) return
     const ctx = c.getContext('2d')
     const dpr = window.devicePixelRatio || 1
-    const w = c.width / dpr, h = c.height / dpr
+    const canvasW = c.width / dpr, canvasH = c.height / dpr
     const v = viewRef.current
     const dark = getIsDark()
+    const numPages = getPageCount()
 
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, c.width, c.height)
     ctx.scale(dpr, dpr)
 
-    if (v.zoom < 1) {
-      // Zoomed out — show grey workspace behind page
-      ctx.fillStyle = dark ? '#141414' : '#e0e0e0'
-      ctx.fillRect(0, 0, w, h)
-      // Draw page as a white rectangle with shadow
-      const pageW = w * v.zoom
-      const pageH = getPageBottom() * v.zoom
-      const px = v.x
-      const py = v.y
-      // Page shadow
+    // Workspace background (always visible — page is fixed width)
+    ctx.fillStyle = dark ? WORKSPACE_BG_DARK : WORKSPACE_BG
+    ctx.fillRect(0, 0, canvasW, canvasH)
+
+    // Draw each A4 page
+    const tmpl = template || 'arabic'
+    for (let p = 0; p < numPages; p++) {
+      const pageTopCanvas = p * PAGE_HEIGHT + p * PAGE_GAP
+      // Screen position of this page
+      const screenX = v.x
+      const screenY = v.y + pageTopCanvas * v.zoom
+      const screenW = PAGE_WIDTH * v.zoom
+      const screenH = PAGE_HEIGHT * v.zoom
+
+      // Skip pages that are completely off-screen
+      if (screenY + screenH < 0 || screenY > canvasH) continue
+
+      // Page shadow + background
       ctx.save()
-      ctx.shadowColor = 'rgba(0,0,0,0.2)'
-      ctx.shadowBlur = 12
-      ctx.shadowOffsetX = 0
+      ctx.shadowColor = 'rgba(0,0,0,0.15)'
+      ctx.shadowBlur = 8
       ctx.shadowOffsetY = 2
       ctx.fillStyle = dark ? PAGE_BG_DARK : PAGE_BG
-      ctx.fillRect(px, py, pageW, pageH)
+      ctx.fillRect(screenX, screenY, screenW, screenH)
       ctx.restore()
-    } else {
-      // Fill entire canvas with page background
-      ctx.fillStyle = dark ? PAGE_BG_DARK : PAGE_BG
-      ctx.fillRect(0, 0, w, h)
-    }
 
-    // Draw template pattern — clip to page bounds when zoomed out
-    const tmpl = template || 'arabic'
-    if (tmpl === 'blank') return
-    if (v.zoom < 1) {
-      ctx.save()
-      const pageW = w * v.zoom
-      const pageH = getPageBottom() * v.zoom
-      ctx.beginPath()
-      ctx.rect(v.x, v.y, pageW, pageH)
-      ctx.clip()
+      // Draw template lines clipped to this page
+      if (tmpl !== 'blank') {
+        ctx.save()
+        ctx.beginPath()
+        ctx.rect(screenX, screenY, screenW, screenH)
+        ctx.clip()
+        if (tmpl === 'arabic') drawArabicTemplate(ctx, screenX, screenY, screenW, screenH, v, dark)
+        else if (tmpl === 'lined') drawLinedTemplate(ctx, screenX, screenY, screenW, screenH, v, dark)
+        else if (tmpl === 'grid') drawGridTemplate(ctx, screenX, screenY, screenW, screenH, v, dark)
+        else if (tmpl === 'dotted') drawDottedTemplate(ctx, screenX, screenY, screenW, screenH, v, dark)
+        else drawLinedTemplate(ctx, screenX, screenY, screenW, screenH, v, dark)
+        ctx.restore()
+      }
     }
-    if (tmpl === 'lined') drawLinedTemplate(ctx, w, h, v, dark)
-    else if (tmpl === 'grid') drawGridTemplate(ctx, w, h, v, dark)
-    else if (tmpl === 'dotted') drawDottedTemplate(ctx, w, h, v, dark)
-    else if (tmpl === 'arabic') drawArabicTemplate(ctx, w, h, v, dark)
-    else drawLinedTemplate(ctx, w, h, v, dark) // fallback
-    if (v.zoom < 1) ctx.restore()
   }
 
-  function drawLinedTemplate(ctx, w, h, v, dark) {
+  // Template drawing — all coordinates are in screen space, relative to page origin
+  function drawLinedTemplate(ctx, px, py, pw, ph, v, dark) {
     ctx.strokeStyle = dark ? LINE_COLOR_DARK : LINE_COLOR
     ctx.lineWidth = 0.5
-    const startLine = Math.max(0, Math.floor(-v.y / (LINE_SPACING * v.zoom)))
-    const endLine = Math.ceil((h - v.y) / (LINE_SPACING * v.zoom))
-    for (let i = startLine; i <= endLine; i++) {
-      const y = v.y + i * LINE_SPACING * v.zoom
-      if (y < 0 || y > h) continue
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
+    const spacing = LINE_SPACING * v.zoom
+    const margin = 20 * v.zoom // top margin before first line
+    for (let y = py + margin + spacing; y < py + ph; y += spacing) {
+      ctx.beginPath(); ctx.moveTo(px, y); ctx.lineTo(px + pw, y); ctx.stroke()
     }
   }
 
-  function drawGridTemplate(ctx, w, h, v, dark) {
+  function drawGridTemplate(ctx, px, py, pw, ph, v, dark) {
     ctx.strokeStyle = dark ? GRID_COLOR_DARK : GRID_COLOR
     ctx.lineWidth = 0.5
+    const spacing = LINE_SPACING * v.zoom
     // Horizontal
-    const startH = Math.max(0, Math.floor(-v.y / (LINE_SPACING * v.zoom)))
-    const endH = Math.ceil((h - v.y) / (LINE_SPACING * v.zoom))
-    for (let i = startH; i <= endH; i++) {
-      const y = v.y + i * LINE_SPACING * v.zoom
-      if (y < 0 || y > h) continue
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
+    for (let y = py + spacing; y < py + ph; y += spacing) {
+      ctx.beginPath(); ctx.moveTo(px, y); ctx.lineTo(px + pw, y); ctx.stroke()
     }
     // Vertical
-    const startV = Math.max(0, Math.floor(-v.x / (LINE_SPACING * v.zoom)))
-    const endV = Math.ceil((w - v.x) / (LINE_SPACING * v.zoom))
-    for (let i = startV; i <= endV; i++) {
-      const x = v.x + i * LINE_SPACING * v.zoom
-      if (x < 0 || x > w) continue
-      ctx.beginPath(); ctx.moveTo(x, Math.max(0, v.y)); ctx.lineTo(x, h); ctx.stroke()
+    for (let x = px + spacing; x < px + pw; x += spacing) {
+      ctx.beginPath(); ctx.moveTo(x, py); ctx.lineTo(x, py + ph); ctx.stroke()
     }
   }
 
-  function drawDottedTemplate(ctx, w, h, v, dark) {
+  function drawDottedTemplate(ctx, px, py, pw, ph, v, dark) {
     ctx.fillStyle = dark ? GRID_COLOR_DARK : GRID_COLOR
-    const startH = Math.max(0, Math.floor(-v.y / (LINE_SPACING * v.zoom)))
-    const endH = Math.ceil((h - v.y) / (LINE_SPACING * v.zoom))
-    const startV = Math.max(0, Math.floor(-v.x / (LINE_SPACING * v.zoom)))
-    const endV = Math.ceil((w - v.x) / (LINE_SPACING * v.zoom))
+    const spacing = LINE_SPACING * v.zoom
     const dotR = Math.max(0.8, 1 * v.zoom)
-    for (let row = startH; row <= endH; row++) {
-      const y = v.y + row * LINE_SPACING * v.zoom
-      if (y < 0 || y > h) continue
-      for (let col = startV; col <= endV; col++) {
-        const x = v.x + col * LINE_SPACING * v.zoom
-        if (x < 0 || x > w) continue
+    for (let y = py + spacing; y < py + ph; y += spacing) {
+      for (let x = px + spacing; x < px + pw; x += spacing) {
         ctx.beginPath(); ctx.arc(x, y, dotR, 0, Math.PI * 2); ctx.fill()
       }
     }
   }
 
-  function drawArabicTemplate(ctx, w, h, v, dark) {
-    const spacing = 48 // wider for Arabic script
-    ctx.lineWidth = 0.5
-    const startLine = Math.max(0, Math.floor(-v.y / (spacing * v.zoom)))
-    const endLine = Math.ceil((h - v.y) / (spacing * v.zoom))
-    for (let i = startLine; i <= endLine; i++) {
-      const baseY = v.y + i * spacing * v.zoom
+  function drawArabicTemplate(ctx, px, py, pw, ph, v, dark) {
+    const spacing = 48 * v.zoom // wider for Arabic script
+    const margin = 20 * v.zoom // top margin
+    for (let y = py + margin + spacing; y < py + ph; y += spacing) {
       // Baseline (solid)
       ctx.strokeStyle = dark ? '#3a3f46' : '#b0b8c0'
       ctx.lineWidth = 0.8
-      if (baseY >= 0 && baseY <= h) {
-        ctx.beginPath(); ctx.moveTo(0, baseY); ctx.lineTo(w, baseY); ctx.stroke()
-      }
+      ctx.beginPath(); ctx.moveTo(px, y); ctx.lineTo(px + pw, y); ctx.stroke()
       // Midline guide (dashed, lighter)
-      const midY = baseY + spacing * v.zoom * 0.5
-      ctx.strokeStyle = dark ? LINE_COLOR_DARK : LINE_COLOR
-      ctx.lineWidth = 0.3
-      ctx.setLineDash([4, 4])
-      if (midY >= 0 && midY <= h) {
-        ctx.beginPath(); ctx.moveTo(0, midY); ctx.lineTo(w, midY); ctx.stroke()
+      const midY = y + spacing * 0.5
+      if (midY < py + ph) {
+        ctx.strokeStyle = dark ? LINE_COLOR_DARK : LINE_COLOR
+        ctx.lineWidth = 0.3
+        ctx.setLineDash([4, 4])
+        ctx.beginPath(); ctx.moveTo(px, midY); ctx.lineTo(px + pw, midY); ctx.stroke()
+        ctx.setLineDash([])
       }
-      ctx.setLineDash([])
     }
   }
 
@@ -694,8 +699,6 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
         drawImageHandles(ctx, el)
       }
     }
-    // Page break lines
-    drawPageBreakLines(ctx)
   }
 
   function drawImageHandles(ctx, el) {
@@ -755,24 +758,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     ctx.restore()
   }
 
-  function drawPageBreakLines(ctx) {
-    const wrapper = wrapperRef.current
-    if (!wrapper) return
-    const pageW = wrapper.clientWidth
-    const pdfPageH = pageW * 1.414
-    const pageBottom = getPageBottom()
-    ctx.save()
-    ctx.setLineDash([8 / viewRef.current.zoom, 4 / viewRef.current.zoom])
-    ctx.strokeStyle = 'rgba(200, 200, 200, 0.5)'
-    ctx.lineWidth = 1 / viewRef.current.zoom
-    for (let y = pdfPageH; y < pageBottom; y += pdfPageH) {
-      ctx.beginPath()
-      ctx.moveTo(0, y)
-      ctx.lineTo(pageW, y)
-      ctx.stroke()
-    }
-    ctx.restore()
-  }
+  // Page breaks are now visible as gaps between A4 pages — no break lines needed
 
   function redrawAll() {
     drawPageBackground()
@@ -2034,20 +2020,23 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
 
   // ── Export ──
   function exportAsPNG() {
-    const pageBottom = getPageBottom()
+    const numPages = getPageCount()
+    const totalH = numPages * PAGE_HEIGHT
     const offscreen = document.createElement('canvas')
-    offscreen.width = EXPORT_WIDTH * 2
-    offscreen.height = pageBottom * 2
+    offscreen.width = PAGE_WIDTH * 2
+    offscreen.height = totalH * 2
     const ctx = offscreen.getContext('2d')
     ctx.scale(2, 2)
-    // Fill page background
-    ctx.fillStyle = getIsDark() ? PAGE_BG_DARK : PAGE_BG
-    ctx.fillRect(0, 0, EXPORT_WIDTH, pageBottom)
-    // Draw template
-    drawTemplateOnExport(ctx, EXPORT_WIDTH, pageBottom)
+    const dark = getIsDark()
+    // Draw each page with template
+    for (let p = 0; p < numPages; p++) {
+      const pageY = p * PAGE_HEIGHT
+      ctx.fillStyle = dark ? PAGE_BG_DARK : PAGE_BG
+      ctx.fillRect(0, pageY, PAGE_WIDTH, PAGE_HEIGHT)
+      drawTemplateOnExportPage(ctx, 0, pageY, PAGE_WIDTH, PAGE_HEIGHT, dark)
+    }
     // Draw all elements
     elementsRef.current.forEach(el => drawElement(ctx, el, imageCacheRef.current))
-    // Download
     const link = document.createElement('a')
     link.download = `notebook-${lessonId}.png`
     link.href = offscreen.toDataURL('image/png')
@@ -2058,27 +2047,28 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     try {
       const jsPDFModule = await import('jspdf')
       const jsPDF = jsPDFModule.default || jsPDFModule.jsPDF
-      const pageBottom = getPageBottom()
-      const pdfPageH = EXPORT_WIDTH * 1.414 // A4 ratio
-      const pageCount = Math.ceil(pageBottom / pdfPageH)
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [EXPORT_WIDTH, pdfPageH] })
+      const numPages = getPageCount()
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [PAGE_WIDTH, PAGE_HEIGHT] })
+      const dark = getIsDark()
 
-      for (let p = 0; p < pageCount; p++) {
+      for (let p = 0; p < numPages; p++) {
         if (p > 0) pdf.addPage()
         const offscreen = document.createElement('canvas')
-        offscreen.width = EXPORT_WIDTH * 2
-        offscreen.height = pdfPageH * 2
+        offscreen.width = PAGE_WIDTH * 2
+        offscreen.height = PAGE_HEIGHT * 2
         const ctx = offscreen.getContext('2d')
         ctx.scale(2, 2)
-        ctx.fillStyle = getIsDark() ? PAGE_BG_DARK : PAGE_BG
-        ctx.fillRect(0, 0, EXPORT_WIDTH, pdfPageH)
+        ctx.fillStyle = dark ? PAGE_BG_DARK : PAGE_BG
+        ctx.fillRect(0, 0, PAGE_WIDTH, PAGE_HEIGHT)
+        drawTemplateOnExportPage(ctx, 0, 0, PAGE_WIDTH, PAGE_HEIGHT, dark)
+        // Translate so page p's content starts at y=0
+        const pageTopCanvas = p * PAGE_HEIGHT + p * PAGE_GAP
         ctx.save()
-        ctx.translate(0, -p * pdfPageH)
-        drawTemplateOnExport(ctx, EXPORT_WIDTH, pageBottom)
+        ctx.translate(0, -pageTopCanvas)
         elementsRef.current.forEach(el => drawElement(ctx, el, imageCacheRef.current))
         ctx.restore()
         const imgData = offscreen.toDataURL('image/jpeg', 0.92)
-        pdf.addImage(imgData, 'JPEG', 0, 0, EXPORT_WIDTH, pdfPageH)
+        pdf.addImage(imgData, 'JPEG', 0, 0, PAGE_WIDTH, PAGE_HEIGHT)
       }
 
       pdf.save(`notebook-${lessonId}.pdf`)
@@ -2087,41 +2077,47 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     }
   }
 
-  function drawTemplateOnExport(ctx, w, h) {
+  function drawTemplateOnExportPage(ctx, px, py, pw, ph, dark) {
     const tmpl = template || 'arabic'
     if (tmpl === 'blank') return
-    ctx.strokeStyle = getIsDark() ? LINE_COLOR_DARK : LINE_COLOR
-    ctx.lineWidth = 0.5
-    if (tmpl === 'lined') {
-      for (let y = LINE_SPACING; y < h; y += LINE_SPACING) {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
-      }
-    } else if (tmpl === 'grid') {
-      for (let y = LINE_SPACING; y < h; y += LINE_SPACING) {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
-      }
-      for (let x = LINE_SPACING; x < w; x += LINE_SPACING) {
-        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke()
-      }
-    } else if (tmpl === 'dotted') {
-      ctx.fillStyle = getIsDark() ? GRID_COLOR_DARK : GRID_COLOR
-      for (let y = LINE_SPACING; y < h; y += LINE_SPACING) {
-        for (let x = LINE_SPACING; x < w; x += LINE_SPACING) {
-          ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill()
+    if (tmpl === 'arabic') {
+      const spacing = 48
+      const margin = 20
+      for (let y = py + margin + spacing; y < py + ph; y += spacing) {
+        ctx.strokeStyle = dark ? '#3a3f46' : '#b0b8c0'
+        ctx.lineWidth = 0.8
+        ctx.beginPath(); ctx.moveTo(px, y); ctx.lineTo(px + pw, y); ctx.stroke()
+        const midY = y + spacing * 0.5
+        if (midY < py + ph) {
+          ctx.strokeStyle = dark ? LINE_COLOR_DARK : LINE_COLOR
+          ctx.lineWidth = 0.3
+          ctx.setLineDash([4, 4])
+          ctx.beginPath(); ctx.moveTo(px, midY); ctx.lineTo(px + pw, midY); ctx.stroke()
+          ctx.setLineDash([])
         }
       }
-    } else if (tmpl === 'arabic') {
-      const spacing = 48
-      for (let y = spacing; y < h; y += spacing) {
-        ctx.strokeStyle = getIsDark() ? '#3a3f46' : '#b0b8c0'
-        ctx.lineWidth = 0.8
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
-        const midY = y + spacing * 0.5
-        ctx.strokeStyle = getIsDark() ? LINE_COLOR_DARK : LINE_COLOR
-        ctx.lineWidth = 0.3
-        ctx.setLineDash([4, 4])
-        ctx.beginPath(); ctx.moveTo(0, midY); ctx.lineTo(w, midY); ctx.stroke()
-        ctx.setLineDash([])
+    } else if (tmpl === 'lined') {
+      ctx.strokeStyle = dark ? LINE_COLOR_DARK : LINE_COLOR
+      ctx.lineWidth = 0.5
+      const margin = 20
+      for (let y = py + margin + LINE_SPACING; y < py + ph; y += LINE_SPACING) {
+        ctx.beginPath(); ctx.moveTo(px, y); ctx.lineTo(px + pw, y); ctx.stroke()
+      }
+    } else if (tmpl === 'grid') {
+      ctx.strokeStyle = dark ? GRID_COLOR_DARK : GRID_COLOR
+      ctx.lineWidth = 0.5
+      for (let y = py + LINE_SPACING; y < py + ph; y += LINE_SPACING) {
+        ctx.beginPath(); ctx.moveTo(px, y); ctx.lineTo(px + pw, y); ctx.stroke()
+      }
+      for (let x = px + LINE_SPACING; x < px + pw; x += LINE_SPACING) {
+        ctx.beginPath(); ctx.moveTo(x, py); ctx.lineTo(x, py + ph); ctx.stroke()
+      }
+    } else if (tmpl === 'dotted') {
+      ctx.fillStyle = dark ? GRID_COLOR_DARK : GRID_COLOR
+      for (let y = py + LINE_SPACING; y < py + ph; y += LINE_SPACING) {
+        for (let x = px + LINE_SPACING; x < px + pw; x += LINE_SPACING) {
+          ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill()
+        }
       }
     }
   }

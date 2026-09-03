@@ -27,11 +27,11 @@ function renderMarkdown(text) {
 }
 
 const TEMPLATES = [
+  { value: 'arabic', label: 'Arabic' },
   { value: 'lined', label: 'Lined' },
-  { value: 'blank', label: 'Blank' },
   { value: 'grid', label: 'Grid' },
   { value: 'dotted', label: 'Dotted' },
-  { value: 'arabic', label: 'Arabic' },
+  { value: 'blank', label: 'Blank' },
 ]
 
 export default function Notebook() {
