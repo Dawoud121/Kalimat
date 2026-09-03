@@ -1183,6 +1183,27 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     }
 
     // ── Pen / Highlighter ──
+    // Finalize any in-progress stroke (guards against missed pointerUp on iPad)
+    if (currentStrokeRef.current && isDrawingRef.current) {
+      const prev = currentStrokeRef.current
+      currentStrokeRef.current = null
+      isDrawingRef.current = false
+      if (prev.points.length < 2) prev.points.push({ ...prev.points[0] })
+      prev.smooth = false
+      prev.points = prev.points.map(p => ({
+        x: Math.round(p.x * 10) / 10,
+        y: Math.round(p.y * 10) / 10,
+        pressure: Math.round(p.pressure * 100) / 100,
+      }))
+      elementsRef.current.push(prev)
+      undoStackRef.current.push({ type: 'draw', stroke: prev })
+      redoStackRef.current = []
+      clearActiveCanvas()
+      redrawAll()
+      scheduleSave()
+      updateCounts()
+    }
+
     // Snap-to-endpoint: check existing strokes for nearby endpoints
     let startPos = { x: pos.x, y: pos.y }
     for (const el of elementsRef.current) {
