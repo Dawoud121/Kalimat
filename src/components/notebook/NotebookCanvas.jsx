@@ -338,7 +338,9 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   const selDragRef = useRef(null) // { startX, startY, origPositions }
 
   // Cursor position for tool preview (eraser circle, pen/highlighter dot)
-  const [cursorPos, setCursorPos] = useState(null)
+  // Use refs + direct DOM manipulation to avoid React re-renders on every pointer move
+  const cursorEraserRef = useRef(null)
+  const cursorDotRef = useRef(null)
 
   // Image context menu state
   const [imageMenu, setImageMenu] = useState(null) // { x, y, idx }
@@ -364,9 +366,10 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       offscreen.height = contentBottom * 2
       const ctx = offscreen.getContext('2d')
       ctx.scale(2, 2)
-      ctx.fillStyle = getIsDark() ? PAGE_BG_DARK : PAGE_BG
+      const dark = getIsDark()
+      ctx.fillStyle = dark ? PAGE_BG_DARK : PAGE_BG
       ctx.fillRect(0, 0, w, contentBottom)
-      drawTemplateOnExport(ctx, w, contentBottom)
+      drawTemplateOnExportPage(ctx, 0, 0, w, contentBottom, dark)
       elementsRef.current.forEach(el => drawElement(ctx, el, imageCacheRef.current))
       return offscreen.toDataURL('image/png')
     },
@@ -1227,10 +1230,32 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       }
     }
 
-    // Track cursor for eraser circle / pen dot preview
-    if (tool === 'eraser' || tool === 'pen' || tool === 'highlighter') {
+    // Track cursor for eraser circle / pen dot preview (direct DOM, no re-render)
+    if (e.pointerType !== 'touch' && (tool === 'eraser' || tool === 'pen' || tool === 'highlighter')) {
       const rect = activeCanvasRef.current?.getBoundingClientRect()
-      if (rect) setCursorPos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+      if (rect) {
+        const cx = e.clientX - rect.left, cy = e.clientY - rect.top
+        if (tool === 'eraser' && cursorEraserRef.current) {
+          const s = cursorEraserRef.current.style
+          s.display = 'block'
+          s.left = cx + 'px'
+          s.top = cy + 'px'
+          const sz = ERASER_SIZES[eraserSize] * 2 * viewRef.current.zoom
+          s.width = sz + 'px'
+          s.height = sz + 'px'
+        }
+        if ((tool === 'pen' || tool === 'highlighter') && cursorDotRef.current) {
+          const s = cursorDotRef.current.style
+          s.display = 'block'
+          s.left = cx + 'px'
+          s.top = cy + 'px'
+          const sz = (thickness + 2) * viewRef.current.zoom
+          s.width = sz + 'px'
+          s.height = sz + 'px'
+          s.backgroundColor = color
+          s.opacity = tool === 'highlighter' ? '0.5' : '0.7'
+        }
+      }
     }
 
     if (!isDrawingRef.current) return
@@ -2211,26 +2236,13 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
-          onPointerLeave={() => setCursorPos(null)}
+          onPointerLeave={() => {
+            if (cursorEraserRef.current) cursorEraserRef.current.style.display = 'none'
+            if (cursorDotRef.current) cursorDotRef.current.style.display = 'none'
+          }}
         />
-        {cursorPos && tool === 'eraser' && (
-          <div className="notebook-cursor-circle" style={{
-            left: cursorPos.x,
-            top: cursorPos.y,
-            width: ERASER_SIZES[eraserSize] * 2 * viewRef.current.zoom,
-            height: ERASER_SIZES[eraserSize] * 2 * viewRef.current.zoom,
-          }} />
-        )}
-        {cursorPos && (tool === 'pen' || tool === 'highlighter') && (
-          <div className="notebook-cursor-dot" style={{
-            left: cursorPos.x,
-            top: cursorPos.y,
-            width: (thickness + 2) * viewRef.current.zoom,
-            height: (thickness + 2) * viewRef.current.zoom,
-            backgroundColor: color,
-            opacity: tool === 'highlighter' ? 0.5 : 0.7,
-          }} />
-        )}
+        <div ref={cursorEraserRef} className="notebook-cursor-circle" style={{ display: 'none' }} />
+        <div ref={cursorDotRef} className="notebook-cursor-dot" style={{ display: 'none' }} />
         {/* Text editing overlay */}
         {editingText && (
           <textarea
