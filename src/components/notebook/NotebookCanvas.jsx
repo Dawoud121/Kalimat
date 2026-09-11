@@ -1,5 +1,6 @@
-// v2.9.6
+// v2.9.7
 import React, { useRef, useState, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react'
+import getStroke from 'perfect-freehand'
 import NotebookToolbar from './NotebookToolbar'
 import SelectionToolbar from './SelectionToolbar'
 import { saveNotebookStrokes } from '../../lib/dataService'
@@ -72,16 +73,41 @@ function drawElement(ctx, el, imageCache) {
   }
 }
 
-function drawStroke(ctx, stroke) {
+function getStrokeOptions(stroke, isLive = false) {
+  return {
+    size: stroke.width * 2,
+    thinning: 0.5,
+    smoothing: 0.5,
+    streamline: 0.3,
+    simulatePressure: false,
+    start: { cap: true, taper: 0 },
+    end: { cap: true, taper: isLive ? 0 : 0 },
+    last: !isLive,
+  }
+}
+
+function renderStrokeOutline(ctx, outlinePoints) {
+  if (outlinePoints.length < 3) return
+  ctx.beginPath()
+  ctx.moveTo(outlinePoints[0][0], outlinePoints[0][1])
+  for (let i = 1; i < outlinePoints.length - 1; i++) {
+    const xc = (outlinePoints[i][0] + outlinePoints[i + 1][0]) / 2
+    const yc = (outlinePoints[i][1] + outlinePoints[i + 1][1]) / 2
+    ctx.quadraticCurveTo(outlinePoints[i][0], outlinePoints[i][1], xc, yc)
+  }
+  ctx.closePath()
+  ctx.fill()
+}
+
+function drawStroke(ctx, stroke, isLive = false) {
   const pts = stroke.points
   if (!pts || pts.length === 0) return
   ctx.save()
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
-  ctx.strokeStyle = stroke.color
-  ctx.globalAlpha = stroke.opacity ?? 1
 
   if (stroke.tool === 'highlighter') {
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.strokeStyle = stroke.color
     ctx.globalCompositeOperation = 'multiply'
     ctx.globalAlpha = HIGHLIGHTER_OPACITY
     ctx.lineWidth = stroke.width * 3
@@ -89,33 +115,12 @@ function drawStroke(ctx, stroke) {
     ctx.moveTo(pts[0].x, pts[0].y)
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
     ctx.stroke()
-  } else if (stroke.smooth && pts.length >= 3) {
-    // Smooth rendering with quadratic Bezier curves through midpoints
-    // Use average pressure for uniform width in smooth mode
-    const avgPressure = pts.reduce((s, p) => s + (p.pressure || 0.5), 0) / pts.length
-    ctx.lineWidth = stroke.width * (0.3 + 0.7 * avgPressure)
-    ctx.beginPath()
-    ctx.moveTo(pts[0].x, pts[0].y)
-    for (let i = 0; i < pts.length - 1; i++) {
-      const mid = { x: (pts[i].x + pts[i+1].x) / 2, y: (pts[i].y + pts[i+1].y) / 2 }
-      if (i === 0) {
-        ctx.lineTo(mid.x, mid.y)
-      } else {
-        ctx.quadraticCurveTo(pts[i].x, pts[i].y, mid.x, mid.y)
-      }
-    }
-    ctx.lineTo(pts[pts.length-1].x, pts[pts.length-1].y)
-    ctx.stroke()
   } else {
-    for (let i = 1; i < pts.length; i++) {
-      const p0 = pts[i - 1], p1 = pts[i]
-      const pressure = (p0.pressure + p1.pressure) / 2
-      ctx.lineWidth = stroke.width * (0.3 + 0.7 * pressure)
-      ctx.beginPath()
-      ctx.moveTo(p0.x, p0.y)
-      ctx.lineTo(p1.x, p1.y)
-      ctx.stroke()
-    }
+    const inputPoints = pts.map(p => [p.x, p.y, p.pressure || 0.5])
+    const outlinePoints = getStroke(inputPoints, getStrokeOptions(stroke, isLive))
+    ctx.fillStyle = stroke.color
+    ctx.globalAlpha = stroke.opacity ?? 1
+    renderStrokeOutline(ctx, outlinePoints)
   }
   ctx.restore()
 }
@@ -297,7 +302,6 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
   const holdTimerRef = useRef(null)
   const lastMoveTimeRef = useRef(0)
   const straightenRef = useRef(false)
-  const lastDrawnIndexRef = useRef(0) // incremental stroke rendering
 
   // Viewport transform
   const viewRef = useRef({ x: 0, y: 0, zoom: 1 })
@@ -1188,8 +1192,6 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       const prev = currentStrokeRef.current
       currentStrokeRef.current = null
       isDrawingRef.current = false
-      if (prev.points.length < 2) prev.points.push({ ...prev.points[0] })
-      prev.smooth = false
       prev.points = prev.points.map(p => ({
         x: Math.round(p.x * 10) / 10,
         y: Math.round(p.y * 10) / 10,
@@ -1220,7 +1222,6 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     }
 
     straightenRef.current = false
-    lastDrawnIndexRef.current = 0
     lastMoveTimeRef.current = Date.now()
     if (holdTimerRef.current) clearTimeout(holdTimerRef.current)
 
@@ -1274,7 +1275,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
           s.display = 'block'
           s.left = cx + 'px'
           s.top = cy + 'px'
-          const sz = (thickness + 2) * viewRef.current.zoom
+          const sz = thickness * viewRef.current.zoom
           s.width = sz + 'px'
           s.height = sz + 'px'
           s.backgroundColor = color
@@ -1458,40 +1459,11 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       }
     }, 500)
 
-    // Incremental stroke rendering — only draw new segments
-    const stroke = currentStrokeRef.current
-    const pts = stroke.points
-    const fromIdx = lastDrawnIndexRef.current
-    if (pts.length > 1 && fromIdx < pts.length - 1) {
-      const ctx = activeCanvasRef.current.getContext('2d')
-      applyViewTransform(ctx)
-      ctx.save()
-      ctx.lineCap = 'round'
-      ctx.lineJoin = 'round'
-      ctx.strokeStyle = stroke.color
-
-      if (stroke.tool === 'highlighter' || stroke.smooth) {
-        // Highlighter needs single-path stroke for uniform alpha; smooth needs full Bezier
-        clearActiveCanvas()
-        const ctx2 = activeCanvasRef.current.getContext('2d')
-        applyViewTransform(ctx2)
-        drawStroke(ctx2, stroke)
-      } else {
-        // Pressure-sensitive: draw only new segments
-        for (let i = Math.max(fromIdx, 1); i < pts.length; i++) {
-          const p0 = pts[i - 1], p1 = pts[i]
-          const pressure = (p0.pressure + p1.pressure) / 2
-          ctx.lineWidth = stroke.width * (0.3 + 0.7 * pressure)
-          ctx.globalAlpha = stroke.opacity ?? 1
-          ctx.beginPath()
-          ctx.moveTo(p0.x, p0.y)
-          ctx.lineTo(p1.x, p1.y)
-          ctx.stroke()
-        }
-      }
-      ctx.restore()
-      lastDrawnIndexRef.current = pts.length - 1
-    }
+    // Live stroke preview
+    clearActiveCanvas()
+    const ctx = activeCanvasRef.current.getContext('2d')
+    applyViewTransform(ctx)
+    drawStroke(ctx, currentStrokeRef.current, true)
   }, [tool, eraserSize])
 
   const handlePointerUp = useCallback((e) => {
@@ -1598,11 +1570,6 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
     const stroke = currentStrokeRef.current
     currentStrokeRef.current = null
 
-    // Single-point stroke → render as a dot (duplicate the point so drawStroke works)
-    if (stroke.points.length < 2) {
-      stroke.points.push({ ...stroke.points[0] })
-    }
-
     // Line straightening: if held still for 500ms, replace with straight line
     if (straightenRef.current) {
       const first = stroke.points[0]
@@ -1619,20 +1586,17 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
       straightenRef.current = false
     }
 
-    // Round points
+    // Round points for storage
     stroke.points = stroke.points.map(p => ({
       x: Math.round(p.x * 10) / 10,
       y: Math.round(p.y * 10) / 10,
       pressure: Math.round(p.pressure * 100) / 100,
     }))
 
-    // RDP point reduction (always on for data size)
-    if (stroke.points.length > 3) {
-      stroke.points = rdpSimplify(stroke.points, 0.3)
+    // RDP point reduction for data size (keep more points for perfect-freehand quality)
+    if (stroke.points.length > 5) {
+      stroke.points = rdpSimplify(stroke.points, 0.5)
     }
-
-    // Mark stroke with smooth flag for rendering
-    stroke.smooth = smoothing
 
     elementsRef.current.push(stroke)
     undoStackRef.current.push({ type: 'draw', stroke })
@@ -1645,7 +1609,7 @@ const NotebookCanvas = forwardRef(function NotebookCanvas({ lessonId, initialStr
 
     scheduleSave()
     updateCounts()
-  }, [tool, smoothing])
+  }, [tool])
 
   // ── Undo / Redo ──
   const handleUndo = useCallback(() => {
