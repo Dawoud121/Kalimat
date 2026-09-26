@@ -2248,6 +2248,8 @@ const AI_PROMPT_TEMPLATE = `Generate a JSON array of Arabic vocabulary words for
     "singular": "كَلْبٌ",
     "dual": "كَلْبَانِ",
     "plural": "كِلَابٌ",
+    "feminine": "",
+    "opposite": "",
     "past": "",
     "present": "",
     "command": "",
@@ -2258,8 +2260,10 @@ const AI_PROMPT_TEMPLATE = `Generate a JSON array of Arabic vocabulary words for
 Rules:
 - Include full diacritics/tashkeel on all Arabic text
 - part_of_speech must be one of: noun, verb, adjective, adverb, particle, other
-- For verbs: fill past, present, command, masdar — leave singular, dual, plural empty
+- For verbs: fill past, present, command, masdar — leave singular, dual, plural, feminine empty
 - For nouns/adjectives: fill singular, dual, plural — leave verb fields empty
+- For adjectives/colours: fill feminine with the feminine form (e.g. أَحْمَر → حَمْرَاء)
+- opposite: fill with the antonym if one exists (e.g. كَبِير → صَغِير), leave empty if none
 - example_sentence must be a natural sentence containing the word, fully vowelled
 - notes must always be left empty — do not put anything in it
 - Output raw JSON only — no explanation, no markdown code block`
@@ -2332,7 +2336,7 @@ function AiPromptModal({ onClose }) {
               wordBreak: 'break-word',
               margin: 0,
               padding: '10px 12px',
-              background: 'var(--color-bg-secondary, #f5f5f5)',
+              background: 'var(--color-surface-raised)',
               border: '1px solid var(--color-border)',
               borderRadius: 6,
               color: 'var(--color-text)',
