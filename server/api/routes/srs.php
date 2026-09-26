@@ -18,9 +18,9 @@ if ($method === 'GET' && $path === '/srs/due') {
     $deckId = $_GET['deckId'] ?? null;
 
     $sql = '
-        SELECT s.*, w.arabic, w.english, w.root, w.part_of_speech, w.example_sentence,
-               w.notes, w.color, w.deck_id AS word_deck_id, w.past, w.present, w.command,
-               w.masdar, w.singular, w.dual, w.plural, w.feminine, w.opposite
+        SELECT s.id AS srs_id, s.user_id AS srs_user_id, s.word_id, s.deck_id AS srs_deck_id,
+               s.repetitions, s.ease_factor, s.interval, s.next_review_date, s.last_reviewed,
+               s.created_at AS srs_created_at, w.*
         FROM srs_cards s
         JOIN words w ON w.id = s.word_id
         WHERE s.user_id = ? AND s.next_review_date <= ?
@@ -40,19 +40,19 @@ if ($method === 'GET' && $path === '/srs/due') {
     $result = array_map(function($r) {
         $word = [
             'id' => $r['word_id'], 'arabic' => $r['arabic'], 'english' => $r['english'],
-            'root' => $r['root'], 'part_of_speech' => $r['part_of_speech'],
-            'example_sentence' => $r['example_sentence'], 'notes' => $r['notes'],
-            'color' => $r['color'], 'deck_id' => $r['word_deck_id'],
-            'past' => $r['past'], 'present' => $r['present'], 'command' => $r['command'],
-            'masdar' => $r['masdar'], 'singular' => $r['singular'], 'dual' => $r['dual'],
-            'plural' => $r['plural'], 'feminine' => $r['feminine'], 'opposite' => $r['opposite'],
+            'root' => $r['root'] ?? '', 'part_of_speech' => $r['part_of_speech'] ?? '',
+            'example_sentence' => $r['example_sentence'] ?? '', 'notes' => $r['notes'] ?? '',
+            'color' => $r['color'] ?? null, 'deck_id' => $r['deck_id'],
+            'past' => $r['past'] ?? '', 'present' => $r['present'] ?? '', 'command' => $r['command'] ?? '',
+            'masdar' => $r['masdar'] ?? '', 'singular' => $r['singular'] ?? '', 'dual' => $r['dual'] ?? '',
+            'plural' => $r['plural'] ?? '', 'feminine' => $r['feminine'] ?? '', 'opposite' => $r['opposite'] ?? '',
         ];
         return [
-            'id' => $r['id'], 'user_id' => $r['user_id'], 'word_id' => $r['word_id'],
-            'deck_id' => $r['deck_id'], 'repetitions' => $r['repetitions'],
+            'id' => $r['srs_id'], 'user_id' => $r['srs_user_id'], 'word_id' => $r['word_id'],
+            'deck_id' => $r['srs_deck_id'], 'repetitions' => $r['repetitions'],
             'ease_factor' => $r['ease_factor'], 'interval' => $r['interval'],
             'next_review_date' => $r['next_review_date'], 'last_reviewed' => $r['last_reviewed'],
-            'created_at' => $r['created_at'], 'words' => $word,
+            'created_at' => $r['srs_created_at'], 'words' => $word,
         ];
     }, $rows);
 
@@ -65,9 +65,9 @@ if ($method === 'GET' && $path === '/srs/all') {
     $deckId = $_GET['deckId'] ?? null;
 
     $sql = '
-        SELECT s.*, w.arabic, w.english, w.root, w.part_of_speech, w.example_sentence,
-               w.notes, w.color, w.deck_id AS word_deck_id, w.past, w.present, w.command,
-               w.masdar, w.singular, w.dual, w.plural, w.feminine, w.opposite
+        SELECT s.id AS srs_id, s.user_id AS srs_user_id, s.word_id, s.deck_id AS srs_deck_id,
+               s.repetitions, s.ease_factor, s.interval, s.next_review_date, s.last_reviewed,
+               s.created_at AS srs_created_at, w.*
         FROM srs_cards s
         JOIN words w ON w.id = s.word_id
         WHERE s.user_id = ?
@@ -86,19 +86,19 @@ if ($method === 'GET' && $path === '/srs/all') {
     $result = array_map(function($r) {
         $word = [
             'id' => $r['word_id'], 'arabic' => $r['arabic'], 'english' => $r['english'],
-            'root' => $r['root'], 'part_of_speech' => $r['part_of_speech'],
-            'example_sentence' => $r['example_sentence'], 'notes' => $r['notes'],
-            'color' => $r['color'], 'deck_id' => $r['word_deck_id'],
-            'past' => $r['past'], 'present' => $r['present'], 'command' => $r['command'],
-            'masdar' => $r['masdar'], 'singular' => $r['singular'], 'dual' => $r['dual'],
-            'plural' => $r['plural'], 'feminine' => $r['feminine'], 'opposite' => $r['opposite'],
+            'root' => $r['root'] ?? '', 'part_of_speech' => $r['part_of_speech'] ?? '',
+            'example_sentence' => $r['example_sentence'] ?? '', 'notes' => $r['notes'] ?? '',
+            'color' => $r['color'] ?? null, 'deck_id' => $r['deck_id'],
+            'past' => $r['past'] ?? '', 'present' => $r['present'] ?? '', 'command' => $r['command'] ?? '',
+            'masdar' => $r['masdar'] ?? '', 'singular' => $r['singular'] ?? '', 'dual' => $r['dual'] ?? '',
+            'plural' => $r['plural'] ?? '', 'feminine' => $r['feminine'] ?? '', 'opposite' => $r['opposite'] ?? '',
         ];
         return [
-            'id' => $r['id'], 'user_id' => $r['user_id'], 'word_id' => $r['word_id'],
-            'deck_id' => $r['deck_id'], 'repetitions' => $r['repetitions'],
+            'id' => $r['srs_id'], 'user_id' => $r['srs_user_id'], 'word_id' => $r['word_id'],
+            'deck_id' => $r['srs_deck_id'], 'repetitions' => $r['repetitions'],
             'ease_factor' => $r['ease_factor'], 'interval' => $r['interval'],
             'next_review_date' => $r['next_review_date'], 'last_reviewed' => $r['last_reviewed'],
-            'created_at' => $r['created_at'], 'words' => $word,
+            'created_at' => $r['srs_created_at'], 'words' => $word,
         ];
     }, $rows);
 
