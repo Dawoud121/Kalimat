@@ -78,7 +78,7 @@ export async function wordExistsInDeck(userId, deckId, arabic) {
   return result.exists
 }
 
-export async function createWord(userId, { deckId, arabic, english, root = '', partOfSpeech = '', exampleSentence = '', notes = '', color = null, past = '', present = '', command = '', masdar = '', singular = '', dual = '', plural = '' }) {
+export async function createWord(userId, { deckId, arabic, english, root = '', partOfSpeech = '', exampleSentence = '', notes = '', color = null, past = '', present = '', command = '', masdar = '', singular = '', dual = '', plural = '', feminine = '', opposite = '' }) {
   const data = await api.post('/words', {
     deck_id: deckId || null,
     arabic, english, root,
@@ -92,6 +92,8 @@ export async function createWord(userId, { deckId, arabic, english, root = '', p
     singular: singular || null,
     dual: dual || null,
     plural: plural || null,
+    feminine: feminine || null,
+    opposite: opposite || null,
   })
   cacheWord(data)
   return data
@@ -115,6 +117,8 @@ export async function updateWord(wordId, updates) {
   if (updates.singular !== undefined) mapped.singular = updates.singular || null
   if (updates.dual     !== undefined) mapped.dual     = updates.dual     || null
   if (updates.plural   !== undefined) mapped.plural   = updates.plural   || null
+  if (updates.feminine !== undefined) mapped.feminine  = updates.feminine || null
+  if (updates.opposite !== undefined) mapped.opposite  = updates.opposite || null
 
   return await api.put(`/words/${wordId}`, mapped)
 }
@@ -256,6 +260,8 @@ export async function batchImportDeck(userId, deckData, words, communityDeckId =
     singular:         w.singular || '',
     dual:             w.dual     || '',
     plural:           w.plural   || '',
+    feminine:         w.feminine || '',
+    opposite:         w.opposite || '',
   }))
 
   const insertedWords = await api.post('/words/batch', { deck_id: deck.id, words: wordInserts })
@@ -573,6 +579,8 @@ export function normalizeWord(w) {
     singular:        w.singular || '',
     dual:            w.dual     || '',
     plural:          w.plural   || '',
+    feminine:        w.feminine || '',
+    opposite:        w.opposite || '',
     createdAt:       w.created_at,
   }
 }

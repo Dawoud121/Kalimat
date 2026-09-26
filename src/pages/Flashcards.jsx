@@ -74,13 +74,15 @@ const FIELD_OPTIONS = [
   { value: 'singular', label: 'Singular' },
   { value: 'dual',     label: 'Dual' },
   { value: 'plural',   label: 'Plural' },
+  { value: 'feminine', label: 'Feminine' },
   { value: 'past',     label: 'Past Tense' },
   { value: 'present',  label: 'Present Tense' },
   { value: 'command',  label: 'Command' },
   { value: 'masdar',   label: 'Masdar' },
+  { value: 'opposite', label: 'Opposite' },
 ]
 
-const ARABIC_FIELDS = new Set(['arabic', 'root', 'singular', 'dual', 'plural', 'past', 'present', 'command', 'masdar'])
+const ARABIC_FIELDS = new Set(['arabic', 'root', 'singular', 'dual', 'plural', 'feminine', 'past', 'present', 'command', 'masdar', 'opposite'])
 
 function getFieldValue(word, field) {
   return word[field] || ''
@@ -720,8 +722,12 @@ export default function Flashcards() {
                       { label: 'Singular', value: word.singular },
                       { label: 'Dual',     value: word.dual },
                       { label: 'Plural',   value: word.plural },
+                      { label: 'Feminine', value: word.feminine },
                     ]
-                    const forms = isVerb ? verbForms : isNounAdj ? nounForms : [...verbForms, ...nounForms]
+                    const generalForms = [
+                      { label: 'Opposite', value: word.opposite },
+                    ]
+                    const forms = [...(isVerb ? verbForms : isNounAdj ? nounForms : [...verbForms, ...nounForms]), ...generalForms]
                     const hasForms = forms.some(f => f.value)
                     return (
                       <>

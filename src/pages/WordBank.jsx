@@ -140,6 +140,8 @@ function WordModal({ mode, initial, decks, onSave, onClose, hideDeck = false }) 
     singular:        initial?.singular        || '',
     dual:            initial?.dual            || '',
     plural:          initial?.plural          || '',
+    feminine:        initial?.feminine        || '',
+    opposite:        initial?.opposite        || '',
   })
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
@@ -341,11 +343,12 @@ function WordModal({ mode, initial, decks, onSave, onClose, hideDeck = false }) 
           {(form.partOfSpeech === 'noun' || form.partOfSpeech === 'adjective') && (
             <div className="form-group">
               <label className="form-label">Noun Forms <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>(optional)</span></label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10 }}>
                 {[
-                  { key: 'singular', label: 'Singular (مفرد)', placeholder: 'كِتَاب' },
-                  { key: 'dual',     label: 'Dual (مثنى)',     placeholder: 'كِتَابَان' },
-                  { key: 'plural',   label: 'Plural (جمع)',    placeholder: 'كُتُب' },
+                  { key: 'singular', label: 'Singular (مفرد)',  placeholder: 'كِتَاب' },
+                  { key: 'dual',     label: 'Dual (مثنى)',      placeholder: 'كِتَابَان' },
+                  { key: 'plural',   label: 'Plural (جمع)',     placeholder: 'كُتُب' },
+                  { key: 'feminine', label: 'Feminine (مؤنث)',   placeholder: 'حَمْرَاء' },
                 ].map(({ key, label, placeholder }) => (
                   <div key={key}>
                     <label className="form-label" style={{ fontSize: '0.78rem', marginBottom: 4 }}>{label}</label>
@@ -362,6 +365,18 @@ function WordModal({ mode, initial, decks, onSave, onClose, hideDeck = false }) 
               </div>
             </div>
           )}
+
+          <div className="form-group">
+            <label className="form-label">Opposite (ضد) <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>(optional)</span></label>
+            <input
+              type="text"
+              className="form-input arabic-input"
+              value={form.opposite}
+              onChange={set('opposite')}
+              placeholder="صَغِير"
+              dir="rtl"
+            />
+          </div>
 
           <div className="modal-actions">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
@@ -482,7 +497,7 @@ function DeckModal({ onSave, onClose }) {
 
 // ── Add Word Inline Form (inside EditDeckModal) ───────────────────────────────
 function AddWordInlineForm({ onSave, onCancel }) {
-  const [form, setForm] = useState({ arabic: '', english: '', root: '', partOfSpeech: 'noun', exampleSentence: '', notes: '', past: '', present: '', command: '', masdar: '', singular: '', dual: '', plural: '' })
+  const [form, setForm] = useState({ arabic: '', english: '', root: '', partOfSpeech: 'noun', exampleSentence: '', notes: '', past: '', present: '', command: '', masdar: '', singular: '', dual: '', plural: '', feminine: '', opposite: '' })
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
   const [showKeyboard, setShowKeyboard] = useState(false)
@@ -561,6 +576,8 @@ function AddWordInlineForm({ onSave, onCancel }) {
         singular:        form.singular.trim(),
         dual:            form.dual.trim(),
         plural:          form.plural.trim(),
+        feminine:        form.feminine.trim(),
+        opposite:        form.opposite.trim(),
       })
     } catch (err) {
       setErrors({ global: err.message })
@@ -637,17 +654,22 @@ function AddWordInlineForm({ onSave, onCancel }) {
       {isNounAdj && (
         <div style={{ marginBottom: 8 }}>
           <p className="form-label" style={{ marginBottom: 6 }}>Noun Forms <span style={{ color: 'var(--color-text-muted)', fontWeight: 400 }}>(optional)</span></p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
             {[
               { key: 'singular', ph: 'Singular (مفرد)' },
               { key: 'dual',     ph: 'Dual (مثنى)' },
               { key: 'plural',   ph: 'Plural (جمع)' },
+              { key: 'feminine', ph: 'Feminine (مؤنث)' },
             ].map(({ key, ph }) => (
               <input key={key} {...arabicInputProps(key)} placeholder={ph} />
             ))}
           </div>
         </div>
       )}
+
+      <div style={{ marginBottom: 8 }}>
+        <input {...arabicInputProps('opposite')} placeholder="Opposite (ضد) (optional)" />
+      </div>
 
       <button type="button" className="btn btn-secondary btn-sm"
         style={{ marginBottom: showKeyboard ? 8 : 0 }}
