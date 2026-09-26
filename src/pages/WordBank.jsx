@@ -2383,6 +2383,7 @@ export default function WordBank({ forceSection = null }) {
   const [confirmDeck, setConfirmDeck] = useState(null)
   const [editDeck,    setEditDeck]    = useState(null)
   const [openMenuDeckId, setOpenMenuDeckId] = useState(null)
+  const [menuDropUp, setMenuDropUp] = useState(false)
   const [printDeck,      setPrintDeck]      = useState(null)
   const [frequencyDeck,  setFrequencyDeck]  = useState(null)
   const [rootModal, setRootModal]   = useState(null) // root string or null
@@ -3140,7 +3141,12 @@ export default function WordBank({ forceSection = null }) {
                       <button
                         className="btn btn-ghost btn-sm"
                         style={{ padding: '4px 7px' }}
-                        onClick={() => setOpenMenuDeckId(openMenuDeckId === deck.id ? null : deck.id)}
+                        onClick={(e) => {
+                          if (openMenuDeckId === deck.id) { setOpenMenuDeckId(null); return }
+                          const rect = e.currentTarget.getBoundingClientRect()
+                          setMenuDropUp(rect.bottom + 260 > window.innerHeight)
+                          setOpenMenuDeckId(deck.id)
+                        }}
                         title="More options"
                       >
                         <MoreHorizontal size={15} />
@@ -3151,7 +3157,7 @@ export default function WordBank({ forceSection = null }) {
                             style={{ position: 'fixed', inset: 0, zIndex: 99 }}
                             onClick={() => setOpenMenuDeckId(null)}
                           />
-                          <div className="deck-dropdown">
+                          <div className={`deck-dropdown${menuDropUp ? ' deck-dropdown-up' : ''}`}>
                             <button onClick={() => { setPrintDeck(deck); setOpenMenuDeckId(null) }}>
                               <Printer size={13} /> Print PDF
                             </button>
