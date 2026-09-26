@@ -20,7 +20,7 @@ if ($method === 'GET' && $path === '/srs/due') {
     $sql = '
         SELECT s.*, w.arabic, w.english, w.root, w.part_of_speech, w.example_sentence,
                w.notes, w.color, w.deck_id AS word_deck_id, w.past, w.present, w.command,
-               w.masdar, w.singular, w.dual, w.plural
+               w.masdar, w.singular, w.dual, w.plural, w.feminine, w.opposite
         FROM srs_cards s
         JOIN words w ON w.id = s.word_id
         WHERE s.user_id = ? AND s.next_review_date <= ?
@@ -45,7 +45,7 @@ if ($method === 'GET' && $path === '/srs/due') {
             'color' => $r['color'], 'deck_id' => $r['word_deck_id'],
             'past' => $r['past'], 'present' => $r['present'], 'command' => $r['command'],
             'masdar' => $r['masdar'], 'singular' => $r['singular'], 'dual' => $r['dual'],
-            'plural' => $r['plural'],
+            'plural' => $r['plural'], 'feminine' => $r['feminine'], 'opposite' => $r['opposite'],
         ];
         return [
             'id' => $r['id'], 'user_id' => $r['user_id'], 'word_id' => $r['word_id'],
@@ -67,7 +67,7 @@ if ($method === 'GET' && $path === '/srs/all') {
     $sql = '
         SELECT s.*, w.arabic, w.english, w.root, w.part_of_speech, w.example_sentence,
                w.notes, w.color, w.deck_id AS word_deck_id, w.past, w.present, w.command,
-               w.masdar, w.singular, w.dual, w.plural
+               w.masdar, w.singular, w.dual, w.plural, w.feminine, w.opposite
         FROM srs_cards s
         JOIN words w ON w.id = s.word_id
         WHERE s.user_id = ?
@@ -91,7 +91,7 @@ if ($method === 'GET' && $path === '/srs/all') {
             'color' => $r['color'], 'deck_id' => $r['word_deck_id'],
             'past' => $r['past'], 'present' => $r['present'], 'command' => $r['command'],
             'masdar' => $r['masdar'], 'singular' => $r['singular'], 'dual' => $r['dual'],
-            'plural' => $r['plural'],
+            'plural' => $r['plural'], 'feminine' => $r['feminine'], 'opposite' => $r['opposite'],
         ];
         return [
             'id' => $r['id'], 'user_id' => $r['user_id'], 'word_id' => $r['word_id'],
