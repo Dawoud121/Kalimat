@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kalimat-v2.9.0'
+const CACHE_NAME = 'kalimat-v2.9.8'
 const PRECACHE_URLS = [
   '/',
   '/index.html',
