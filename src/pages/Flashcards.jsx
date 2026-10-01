@@ -198,17 +198,10 @@ export default function Flashcards() {
       // Filter out cards missing the selected front/back field
       const isCustom = frontField !== 'arabic' || backField !== 'english'
       if (isCustom) {
-        console.log('[Flashcards] Custom mode:', frontField, '→', backField, '| Total cards before filter:', cards.length)
-        if (cards.length > 0) {
-          const sample = cards[0].word
-          console.log('[Flashcards] Sample word keys:', Object.keys(sample))
-          console.log('[Flashcards] Sample word front value:', JSON.stringify(sample[frontField]), '| back value:', JSON.stringify(sample[backField]))
-        }
         cards = cards.filter(c => {
           const w = c.word
           return getFieldValue(w, frontField) && getFieldValue(w, backField)
         })
-        console.log('[Flashcards] Cards after filter:', cards.length)
       }
 
       let arr = [...cards]
