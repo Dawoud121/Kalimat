@@ -156,7 +156,7 @@ Local and live are independent databases. Creating accounts, importing data, or 
 
 ---
 
-## Current Version: 2.9.2
+## Current Version: 2.9.8
 Version must stay in sync across three places on every change:
 1. `package.json` → `"version"`
 2. `src/pages/Settings.jsx` → `const APP_VERSION` + `// vX.X.X` header comment
@@ -224,7 +224,7 @@ Files fully migrated from Supabase:
 | `users` | id (UUID), email, password_hash (bcrypt) — replaces Supabase auth.users |
 | `profiles` | username, trust_score, trust_score_vocab, trust_score_forms |
 | `decks` | user vocab decks (review_frequency, review_interval_days, next_deck_review) |
-| `words` | words linked to deck (notes, color, form columns) |
+| `words` | words linked to deck (notes, color, form columns: past/present/command/masdar/singular/dual/plural/feminine/opposite) |
 | `srs_cards` | SM-2 state per word per user |
 | `community_decks` | shared decks (download_count, uploader_username, collection_id, order_index) |
 | `community_collections` | folders for team tab (title, order_index) |
@@ -258,6 +258,9 @@ Files fully migrated from Supabase:
 - `decks.review_frequency`: `'daily' | 'weekly' | 'monthly' | 'custom' | NULL`
 - `sentences.source`: `'user'` (manual) vs `'sentence_flag'` (auto-flagged)
 - `contributions.source`: `'user'` vs `'sentence_flag'` vs `'gemini'` (AI-detected from notebook analysis)
+- `words.feminine`: feminine form (مؤنث) — e.g. أَحْمَر → حَمْرَاء. Shown for nouns/adjectives. Added in v2.9.8.
+- `words.opposite`: antonym (ضد) — e.g. كَبِير → صَغِير. Shown for all POS. Added in v2.9.8.
+- Migration adds `feminine` and `opposite` columns via try/catch ALTER TABLE in `db.php` (same pattern as `notebook_lessons.template`)
 
 ### CLI tools
 - `php server/import-data.php` — import CSV exports from `server/data/exports/` into SQLite (19 tables). Shows deprecation warnings on PHP 8.5 — harmless.
@@ -407,6 +410,7 @@ All API CRUD lives here (uses `api.get/post/put/del` from `src/lib/api.js`). Key
 **Dashboard** — greeting, review CTA (auto-starts session), 4 metric cards (Studied, Time, Pace, Retention — all from localStorage `kalimat_today_stats`), year activity calendar (YearCalendar.jsx — fixed-year view, year nav arrows, no DOW labels), Ayah of the Day (rotates daily by day-of-year). "Needs Attention" / weakest words section removed — keep it gone. `dueCount` is a `useMemo` that excludes cards from frequency decks where `nextDeckReview > now`.
 
 **Flashcards** — setup screen (deck selector, Due only/All cards, limit 10/20/50/All) → SM-2 session → complete screen. `FLIP_DURATION = 400ms`, `isAnimating` ref prevents race. Card front shows forms button. Card back shows notes (mnemonic). Undo last rating (Z key or button) — stores `{ cardIndex, cardId, prevState, ratingKey }` in `lastRating` state, restores SRS card to previous state. Rating buttons always rendered; visibility/opacity/pointer-events toggled (prevents layout jump on flip). Keyboard: Space=flip, 1/2/3=rate, Z=undo. Auto-starts when navigated via Dashboard "Start Review" (`?mode=review`) using `didAutoStart` ref guard.
+- **Advanced mode**: `FIELD_OPTIONS` array defines selectable fields for custom front/back. Fields: arabic, english, root, singular, dual, plural, feminine, past, present, command, masdar, opposite. `ARABIC_FIELDS` Set controls RTL rendering. Cards missing the selected field value are auto-filtered (`getFieldValue(w, field) && getFieldValue(w, backField)`). `frontField`/`backField` state defaults to `arabic`/`english`, persisted in `_savedSession` module cache.
 - **Scratchpad** (`src/components/Scratchpad.jsx`): Drawing canvas below the flashcard for practicing Arabic handwriting with mouse/touch/stylus. Uses HTML5 Canvas + Pointer Events (unified mouse/touch/stylus). Undo (last stroke) and Clear buttons. Auto-clears when advancing to next card via `clearTrigger={sessionIndex}`. Handles Retina/HiDPI via `devicePixelRatio` scaling + `ResizeObserver`. `touch-action: none` on canvas prevents scroll interference. Stroke color reads `--color-text` for dark mode support. No backend — ephemeral drawing only.
 - **Frequency deck handling**: if selected deck has `reviewFrequency`, always loads all cards via `getAllSrsCardsWithWords` (bypasses mode toggle). Setup screen shows a teal info banner. Active session shows a "Mark Done" button (teal, CheckCircle icon) in the header. When all cards reviewed OR "Mark Done" pressed → calls `applyFrequencyDeckReview(deck, userId)` which sets `next_deck_review = now + interval`.
 - **All-decks review mode**: filters out cards from frequency decks where `nextDeckReview > now` (paused decks don't pollute the queue).
@@ -414,6 +418,8 @@ All API CRUD lives here (uses `api.get/post/put/del` from `src/lib/api.js`). Key
 - `applyFrequencyDeckReview(deck, userId)`: module-level async helper, calls `updateDeck(deck.id, { next_deck_review })`
 
 **Word Bank** (`/word-bank`) — secondary sidebar: Words (LIBRARY) / Roots (LIBRARY) / Sentences (STUDY). Words tab: search/filter/inline-edit/batch-delete/mark-as-known/reset SRS. Sentences tab: Arabic sentence composer with autocomplete from word bank, interlinear gloss auto-generated from matches, approve/reject (admin). SQL needed: `ALTER TABLE public.words ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';`
+- **Word form fields**: Verb forms (past, present, command, masdar) shown for POS=verb. Noun forms (singular, dual, plural, feminine) shown for POS=noun/adjective in a 4-column grid. Opposite (ضد) shown for all POS as a standalone field. All optional. Both `WordModal` and `AddWordInlineForm` have these fields.
+- **AI Generate prompt** (`AI_PROMPT_TEMPLATE`): includes feminine/opposite fields with rules (feminine for nouns/adjectives only, opposite for all POS). Prompt `<pre>` uses `var(--color-surface-raised)` background for dark mode compatibility.
 
 **Decks** (`/decks`) — standalone page (own sidebar nav item, no secondary sidebar). Renders `WordBank` with `forceSection="decks"`. Deck CRUD: create/rename/delete, share/unshare to community, reset progress, download count badge, Study links. 3-dot menu per deck: Print PDF, Export, Share to community / Un-share, **Review schedule**, Reset progress, Delete.
 - **Review schedule** (`ReviewFrequencyModal`): sets `review_frequency` + `review_interval_days` on the deck. Options: No schedule / Daily / Weekly / Monthly / Custom (N days). When a frequency is set, the deck card shows a `RefreshCw` badge (`weekly · due` in brand colour, or `weekly · in 3d` in muted grey). The individual SRS "X due" badge is suppressed for frequency decks.
@@ -456,28 +462,39 @@ All API CRUD lives here (uses `api.get/post/put/del` from `src/lib/api.js`). Key
 
 ### Files
 - `src/pages/Notebook.jsx` (v2.9.1) — page shell: sidebar, class/lesson tree, AI analysis panel
-- `src/components/notebook/NotebookCanvas.jsx` (v2.9.2) — all canvas logic: drawing, tools, elements, undo/redo, export
-- `src/components/notebook/NotebookToolbar.jsx` (v2.9.2) — toolbar with tool buttons, color/thickness, AI menu
+- `src/components/notebook/NotebookCanvas.jsx` (v2.9.6) — all canvas logic: drawing, tools, elements, undo/redo, export
+- `src/components/notebook/NotebookToolbar.jsx` (v2.9.5) — Notability-style toolbar with pen dropdown, favorite colors, AI menu
 - `src/components/notebook/SelectionToolbar.jsx` (v2.9.0) — floating toolbar for lasso selection (color, thickness, duplicate, flip, delete)
 - `server/api/routes/notebook.php` — classes/lessons/strokes/images CRUD + Gemini analysis endpoint
 
 ### Canvas Architecture
 - Three stacked `<canvas>` layers: `linesCanvas` (template background), `staticCanvas` (committed elements), `activeCanvas` (in-progress stroke preview)
-- `elementsRef` (renamed from `strokesRef`): polymorphic array of stroke, text, and image elements. Elements without `type` field are treated as strokes for backward compatibility.
+- **A4 page model**: `PAGE_WIDTH = 800`, `PAGE_HEIGHT = Math.round(800 * 1.414) ≈ 1131`, `PAGE_GAP = 20`. Pages are white/cream rectangles on a grey workspace (`WORKSPACE_BG = '#e0e0e0'`, dark: `#141414`). Page background: `PAGE_BG = '#faf9f6'` (dark: `#1e1e1e`). Default zoom fits page width to viewport (`getFitZoom() = wrapperWidth / PAGE_WIDTH`). Min zoom 0.25x, max 5x.
+- `elementsRef`: polymorphic array of stroke, text, and image elements. Elements without `type` field are treated as strokes for backward compatibility.
 - Viewport transform: `viewRef = { x, y, zoom }` — pinch-to-zoom on touch, ctrl+wheel zoom, touch pan, wheel scroll
 - Retina/HiDPI: `devicePixelRatio` scaling + `ResizeObserver`
 - Auto-save: 2-second debounce via `scheduleSave()`, also saves on `beforeunload` and lesson switch
 - Undo/redo stack: `undoStackRef` / `redoStackRef` — action types: `draw`, `erase`, `clear`, `transform`, `deleteSelected`, `addText`, `editText`, `colorChange`, `thicknessChange`
+- **Incremental stroke rendering**: For pressure-sensitive pen strokes, only new segments are drawn to `activeCanvas` on each `pointerMove` (via `lastDrawnIndexRef`), avoiding full-stroke redraw. Highlighter and smooth-mode strokes still use full redraw (highlighter needs single-path for uniform alpha, smooth needs full Bezier recalculation).
+- **Missed pointerUp guard**: `handlePointerDown` checks if a previous stroke is still in-progress (`currentStrokeRef.current && isDrawingRef.current`) and finalizes it before starting a new one — prevents strokes connecting on iPad when `pointerUp` events are dropped.
 
 ### Tools
-- **Pen** — pressure-sensitive strokes via Pointer Events. Snap-to-endpoint (10px). Line straightening on hold (500ms timer → straight line preview, can rotate/resize around origin). Stroke smoothing toggle (quadratic Bezier through midpoints). RDP point simplification (tolerance 0.3) for data size. Colors (7) and thickness (thin/medium/thick).
+- **Pen** — pressure-sensitive strokes via Pointer Events. Pressure model: `width = thickness * (0.3 + 0.7 * pressure)`. Snap-to-endpoint (10px `SNAP_DISTANCE`). Line straightening on hold (500ms timer → straight line preview, can rotate/resize around origin). Stroke smoothing toggle (quadratic Bezier through midpoints). RDP point simplification (tolerance 0.3) for data size. Single-point dots supported (duplicate point added if `points.length < 2`).
 - **Highlighter** — `globalCompositeOperation: 'multiply'`, `HIGHLIGHTER_OPACITY = 0.3`, width ×3
-- **Eraser** — hit-test on move, removes matching elements
-- **Cursor** (MousePointer2 icon) — universal select/move/resize tool. Hit-tests images (move + corner resize handles), text (opens editor), strokes. Aspect-ratio-locked resize via corner handles (tl/tr/bl/br).
-- **Lasso** — draw freeform polygon, selects elements inside via ray-casting (`pointInPolygon`). Selection persists (Notability-style) until click-away or tool change. Uses ref-synced state pattern (`selectedIndicesRef` + `selectedImageRef`) for immediate canvas drawing after `setState`. Lasso polygon stored in `lassoPolygonRef` for persistent visual display. Drag to move selection. Click inside → toggle floating SelectionToolbar. Undo/redo for transform and delete.
-- **Text** — click to create new text element, click existing to edit. RTL direction, Noto Naskh Arabic font. `editingText` state with `textAreaRef` overlay.
-- **Image** — insert images from file picker or clipboard paste (right-click → `navigator.clipboard.read()`). `compressImage(file, maxDim=2048, quality=0.92)`. Images are base64 data URLs stored inline in the element. Select → move/resize with blue dashed border + white corner handles. Aspect-ratio-locked resize.
+- **Eraser** — hit-test on move, removes matching elements. 3 sizes: Small (8px), Medium (16px), Large (28px) — `ERASER_SIZES = { small: 8, medium: 16, large: 28 }`.
+- **Cursor** (MousePointer2 icon) — universal select/move/resize tool. Hit-tests images (move + corner resize handles), text (opens editor), strokes. Aspect-ratio-locked resize via corner handles (tl/tr/bl/br). Respects element `locked` flag.
+- **Lasso** — draw freeform polygon, selects elements inside via ray-casting (`pointInPolygon`). Selection persists (Notability-style) until click-away or tool change. Uses ref-synced state pattern (`selectedIndicesRef` + `selectedImageRef` + `lassoPathRef`) for immediate canvas drawing after `setState`. Lasso polygon stored in `lassoPolygonRef` for persistent visual display. Drag to move selection. Click inside → toggle floating SelectionToolbar. Undo/redo for transform and delete.
+- **Text** — click to create new text element, click existing to edit. RTL direction, Noto Naskh Arabic font. 5 font sizes: 16/20/24/32/40px. `editingText` state with `textAreaRef` overlay.
+- **Image** — insert images from file picker or clipboard paste (right-click → `navigator.clipboard.read()`). `compressImage(file, maxDim=2048, quality=0.92)`. Images are base64 data URLs stored inline in the element. Select → move/resize with blue dashed border + white corner handles. Aspect-ratio-locked resize. Respects `locked` flag (same lock mechanics as cursor tool).
 - **Right-click**: `if (e.button === 2) return` at top of `handlePointerDown` blocks drawing. `contextmenu` handler reads clipboard for image paste.
+
+### Toolbar (Notability-style, v2.9.5)
+- **Pen/Highlighter**: clicking the tool button once selects it; clicking again opens a Notability-style dropdown (`ToolDropdown`) with 25 colors (5×5 grid: grays, reds, blues, greens, purples) and 8 sizes (1,2,3,4,5,7,9,12px). Color indicator dot shown on tool button.
+- **4 favorite color slots**: persistent via `localStorage` (`kalimat_fav_colors`). Click a slot to select that color; open the dropdown and click a slot to reassign it. Default first color is white in dark mode, black in light mode.
+- **3 quick-thickness buttons**: Thin (2px), Medium (4px), Thick (7px) — always visible when pen/highlighter active.
+- **Eraser**: S/M/L size buttons when active.
+- **Text**: 4 favorite color swatches + 5 font size buttons (16/20/24/32/40px) when active.
+- **ToolDropdown `parentRef`**: outside-click handler excludes clicks on the parent button to prevent toggle-reopen conflict.
 
 ### Ref-synced state pattern (critical for canvas drawing)
 ```jsx
@@ -485,10 +502,10 @@ const [selectedIndices, _setSelectedIndices] = useState(null)
 const selectedIndicesRef = useRef(null)
 const setSelectedIndices = (v) => { selectedIndicesRef.current = v; _setSelectedIndices(v) }
 ```
-Needed because `setState` is async — calling `setSelectedIndices(hits)` then `redrawAll()` reads stale state in the closure. Canvas drawing functions (`redrawStatic`, `drawSelectionHighlight`, `updateSelectionBoundsScreen`) read from refs for immediate access.
+Needed because `setState` is async — calling `setSelectedIndices(hits)` then `redrawAll()` reads stale state in the closure. Canvas drawing functions (`redrawStatic`, `drawSelectionHighlight`, `updateSelectionBoundsScreen`) read from refs for immediate access. Used for `selectedIndices`, `selectedImage`, and `lassoPath`.
 
 ### Page Templates
-5 templates: `lined`, `blank`, `grid`, `dotted`, `arabic` (default). Arabic template has 48px spacing with solid baseline + dashed midline guide. Template stored in `notebook_lessons.template` column. Template selector dropdown in lesson header.
+5 templates in order: `arabic` (default), `lined`, `grid`, `dotted`, `blank`. Arabic template has 48px spacing with solid baseline + dashed midline guide. Template stored in `notebook_lessons.template` column. Template selector dropdown in lesson header. Templates are drawn per-page (reset at each page boundary, no half-lines). Template rendering is clipped to page bounds (no lines bleeding into workspace area when zoomed out).
 
 ### Export
 - `exportAsPNG` / `exportAsPDF` — renders to offscreen canvas at `EXPORT_WIDTH = 800`. PNG via `canvas.toDataURL()`, PDF via jspdf.
@@ -566,6 +583,7 @@ Left panel with class/lesson tree. Auto-closes when a lesson is selected. Rememb
 - Rating buttons always rendered; hidden via `visibility/opacity/pointer-events` (prevents layout jump on flip)
 - Book spine text: `writing-mode: vertical-lr; transform: rotate(180deg)`
 - Dictionary open book: flexbox layout — covers + page-edge stacks + pages + spine
+- Notebook pen dropdown: `.notebook-pen-dropdown` (absolute, 25-color 5×5 grid), `.notebook-fav-swatch` (22px circles with editing glow), `.notebook-tool-btn-with-indicator` + `.notebook-tool-color-indicator` (color dot on pen/highlighter button), `.notebook-cursor-circle` (eraser preview) + `.notebook-cursor-dot` (pen dot preview)
 
 ---
 
@@ -584,8 +602,15 @@ Left panel with class/lesson tree. Auto-closes when a lesson is selected. Rememb
 - Local and live databases are completely independent — changes to one do not affect the other
 - `import-data.php` imports users WITHOUT passwords — must run `set-password.php` for each account after import
 - `src/lib/supabase.js` has been deleted — was dead code from the Supabase migration
-- Notebook canvas: `selectedIndices` / `selectedImage` state must use ref-synced pattern — calling `setState` then `redrawAll()` reads stale state because React batches updates. Canvas drawing reads from `selectedIndicesRef.current` / `selectedImageRef.current` instead.
+- Notebook canvas: `selectedIndices` / `selectedImage` / `lassoPath` state must use ref-synced pattern — calling `setState` then `redrawAll()` reads stale state because React batches updates. Canvas drawing reads from refs instead.
 - Gemini API doesn't reliably follow JSON schema — backend normalizes response fields per mode (e.g. remap `analysis` → `explanation` for explain mode)
 - PowerShell doesn't support `&&` chaining — `git add` commands must be run one at a time, keep each short to avoid line-splitting
 - Notebook elements array is polymorphic: stroke (legacy, no `type` field), `type: 'text'`, `type: 'image'`. Elements without `type` treated as strokes for backward compat.
 - `notebook_lessons.template` defaults to `'arabic'` — migration adds column to existing tables via try/catch ALTER TABLE
+- iPad Apple Pencil: `pointerUp` events can be dropped (Scribble interference, fast lift). `handlePointerDown` must finalize any in-progress stroke before starting a new one. Users should disable iPadOS Scribble (Settings → Apple Pencil → Scribble → Off) for best experience.
+- Notebook pen performance: `handlePointerMove` uses incremental rendering for pressure-sensitive strokes (only new segments). Highlighter/smooth mode still do full redraw. Never call `setState` in pointer handlers — use refs and direct DOM manipulation for cursor overlays.
+- `getCoalescedEvents()` is not supported in Safari/iOS Safari — the code calls it but it silently returns empty on Safari. Safari already delivers Apple Pencil input at high frequency natively.
+- Notebook toolbar `ToolDropdown`: uses `parentRef` prop to exclude parent button from outside-click detection — without this, clicking the pen button to close the dropdown triggers the outside-click handler first (mousedown) then the button click reopens it.
+- Service worker cache (`public/sw.js`): `CACHE_NAME` must be bumped on every deploy that changes JS bundles — stale cache serves old JS indefinitely. Current: `kalimat-v2.9.8`.
+- Deck 3-dot dropdown overflow: bottom-row decks' menus expand below viewport. Fixed with `menuDropUp` state + `.deck-dropdown-up` CSS class (`top: auto; bottom: calc(100% + 4px)`) — position check: `rect.bottom + 260 > window.innerHeight`.
+- **UNRESOLVED BUG — Feminine/Opposite in Flashcard Advanced Mode**: Selecting `feminine` or `opposite` as a field in advanced flashcard mode shows "No cards" even when words have those values. Debug output confirms: `Custom mode: arabic → opposite | Total cards before filter: 44 | back value: "" | Cards after filter: 0`. The word objects have the keys but values are empty strings. Root cause chain: (1) SRS queries in `srs.php` now correctly SELECT feminine/opposite via PRAGMA column detection, (2) `normalizeWord()` in `dataService.js` maps them, (3) `batchImportDeck()` includes feminine/opposite in wordInserts. However, decks imported BEFORE v2.9.8 deployment have empty values in the database because the old `batchImportDeck` didn't include those fields, and re-importing after code update still showed empty — possibly due to service worker cache serving old JS, PHP opcache, or cPanel deploy not fully propagating. To fix: verify the live server's `words.php` and `dataService.js` are the v2.9.8 versions, clear service worker cache, delete and re-import the deck, then check the SQLite database directly to confirm feminine/opposite values are stored.

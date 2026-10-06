@@ -72,6 +72,8 @@ function get_db(array $config): PDO {
             singular         TEXT DEFAULT '',
             dual             TEXT DEFAULT '',
             plural           TEXT DEFAULT '',
+            feminine         TEXT DEFAULT '',
+            opposite         TEXT DEFAULT '',
             notes            TEXT DEFAULT '',
             color            TEXT,
             created_at       TEXT DEFAULT (datetime('now'))
@@ -353,6 +355,10 @@ function get_db(array $config): PDO {
 
     // Migration: add template column to existing notebook_lessons tables
     try { $pdo->exec("ALTER TABLE notebook_lessons ADD COLUMN template TEXT DEFAULT 'arabic'"); } catch (Exception $e) {}
+
+    // Migration: add feminine + opposite columns to existing words tables
+    try { $pdo->exec("ALTER TABLE words ADD COLUMN feminine TEXT DEFAULT ''"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE words ADD COLUMN opposite TEXT DEFAULT ''"); } catch (Exception $e) {}
 
     return $pdo;
 }

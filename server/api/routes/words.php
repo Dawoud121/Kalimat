@@ -60,8 +60,8 @@ if ($method === 'POST' && $path === '/words') {
 
     $stmt = $pdo->prepare('
         INSERT INTO words (user_id, deck_id, arabic, english, root, part_of_speech, example_sentence,
-                           notes, color, past, present, command, masdar, singular, dual, plural)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           notes, color, past, present, command, masdar, singular, dual, plural, feminine, opposite)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ');
     $stmt->execute([
         $payload['sub'],
@@ -80,6 +80,8 @@ if ($method === 'POST' && $path === '/words') {
         $body['singular'] ?? '',
         $body['dual'] ?? '',
         $body['plural'] ?? '',
+        $body['feminine'] ?? '',
+        $body['opposite'] ?? '',
     ]);
     $id = $pdo->lastInsertId();
     $stmt = $pdo->prepare('SELECT * FROM words WHERE id = ?');
@@ -98,8 +100,8 @@ if ($method === 'POST' && $path === '/words/batch') {
 
     $stmt = $pdo->prepare('
         INSERT INTO words (user_id, deck_id, arabic, english, root, part_of_speech, example_sentence,
-                           notes, past, present, command, masdar, singular, dual, plural)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           notes, past, present, command, masdar, singular, dual, plural, feminine, opposite)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ');
 
     $inserted = [];
@@ -126,6 +128,8 @@ if ($method === 'POST' && $path === '/words/batch') {
                 $w['singular'] ?? '',
                 $w['dual'] ?? '',
                 $w['plural'] ?? '',
+                $w['feminine'] ?? '',
+                $w['opposite'] ?? '',
             ]);
             $inserted[] = ['id' => (int)$pdo->lastInsertId()];
         }
@@ -153,7 +157,7 @@ if ($method === 'PUT' && preg_match('#^/words/(\d+)$#', $path, $m)) {
 
     $body = get_json_body();
     $allowed = ['arabic','english','root','part_of_speech','example_sentence','notes','color',
-                'deck_id','past','present','command','masdar','singular','dual','plural'];
+                'deck_id','past','present','command','masdar','singular','dual','plural','feminine','opposite'];
     $sets = [];
     $params = [];
     foreach ($allowed as $col) {
